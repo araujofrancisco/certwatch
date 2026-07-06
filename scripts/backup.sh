@@ -18,6 +18,10 @@ if docker compose ps -q certwatch 2>/dev/null | grep -q .; then
 elif docker ps --filter "name=certwatch" --format '{{.Names}}' | grep -q .; then
   CONTAINER="$(docker ps --filter "name=certwatch" --format '{{.Names}}' | head -1)"
 fi
+# Also check by container name directly
+if [ -z "$CONTAINER" ]; then
+  CONTAINER="$(docker ps -a --filter "name=certwatch" --format '{{.ID}}' | head -1)"
+fi
 
 cleanup() { rm -f /tmp/"$BACKUP_NAME"* /tmp/certwatch-config-*; }
 trap cleanup EXIT
@@ -25,28 +29,45 @@ trap cleanup EXIT
 if [ -n "$CONTAINER" ]; then
   echo "Backing up CertWatch via Docker container: $CONTAINER"
 
-  if docker exec "$CONTAINER" test -d /backups 2>/dev/null; then
+  # Helper: copy DB + WAL files using docker cp (works with scratch images)
+  copy_db() {
+    local src="$1" dst="$2"
+    docker cp "$CONTAINER":"$src/certwatch.db" "$dst/${BACKUP_NAME}.db" 2>/dev/null || return 1
+    docker cp "$CONTAINER":"$src/certwatch.db-wal" "$dst/${BACKUP_NAME}.db-wal" 2>/dev/null || true
+    docker cp "$CONTAINER":"$src/certwatch.db-shm" "$dst/${BACKUP_NAME}.db-shm" 2>/dev/null || true
+    return 0
+  }
+
+  tar_files() {
+    local dir="$1" name="$2" config="$3"
+    local files=("${name}.db")
+    [ -f "$dir/${name}.db-wal" ] && files+=("${name}.db-wal")
+    [ -f "$dir/${name}.db-shm" ] && files+=("${name}.db-shm")
+    [ -n "$config" ] && [ -f "$dir/$config" ] && files+=("$config")
+    tar czf "$BACKUP_DIR/${name}.tar.gz" -C "$dir" "${files[@]}"
+  }
+
+  # Direct-write path: /backups volume mounted, DB visible on host
+  if [ -d "$BACKUP_DIR" ] && \
+     docker inspect "$CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/backups"}}{{.Source}}{{end}}{{end}}' 2>/dev/null | grep -q .; then
     echo "Direct backup volume detected — DB visible on host at $BACKUP_DIR"
-    docker exec "$CONTAINER" sqlite3 /data/certwatch.db ".backup /backups/${BACKUP_NAME}.db"
+    copy_db "/data" "$BACKUP_DIR"
     docker cp "$CONTAINER":/config/default.yaml "$BACKUP_DIR/${BACKUP_NAME}.yaml" 2>/dev/null || true
-    (cd "$BACKUP_DIR" && tar czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}.db" "${BACKUP_NAME}.yaml" 2>/dev/null) || \
-      (cd "$BACKUP_DIR" && tar czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}.db")
+    tar_files "$BACKUP_DIR" "$BACKUP_NAME" "${BACKUP_NAME}.yaml"
+    rm -f "$BACKUP_DIR/${BACKUP_NAME}.db" "$BACKUP_DIR/${BACKUP_NAME}.db-wal" \
+          "$BACKUP_DIR/${BACKUP_NAME}.db-shm" "$BACKUP_DIR/${BACKUP_NAME}.yaml" 2>/dev/null || true
   else
-    echo "Writing backup to temp location and copying out"
-    docker exec "$CONTAINER" sqlite3 /data/certwatch.db ".backup /tmp/${BACKUP_NAME}.db"
-    docker cp "$CONTAINER":/tmp/"${BACKUP_NAME}".db /tmp/
+    echo "Copying database and config from container to temp"
+    copy_db "/data" "/tmp"
     docker cp "$CONTAINER":/config/default.yaml /tmp/certwatch-config.yaml 2>/dev/null || true
-    docker exec "$CONTAINER" rm -f "/tmp/${BACKUP_NAME}.db"
-    (cd /tmp && tar czf "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}.db" certwatch-config.yaml 2>/dev/null) || \
-      (cd /tmp && tar czf "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}.db")
+    tar_files "/tmp" "$BACKUP_NAME" "certwatch-config.yaml"
+    rm -f /tmp/"${BACKUP_NAME}".db /tmp/"${BACKUP_NAME}".db-wal /tmp/"${BACKUP_NAME}".db-shm /tmp/certwatch-config.yaml 2>/dev/null || true
   fi
 
   if [ ! -f "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" ]; then
     echo "ERROR: failed to create backup archive" >&2
-    rm -f "$BACKUP_DIR/${BACKUP_NAME}.db" "$BACKUP_DIR/${BACKUP_NAME}.yaml" 2>/dev/null || true
     exit 1
   fi
-  rm -f "$BACKUP_DIR/${BACKUP_NAME}.db" "$BACKUP_DIR/${BACKUP_NAME}.yaml" 2>/dev/null || true
 else
   echo "Backing up CertWatch (standalone mode)"
 

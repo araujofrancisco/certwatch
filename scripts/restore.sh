@@ -74,9 +74,17 @@ tar xzf "$BACKUP_FILE" -C "$TMPDIR"
 echo "Extracted backup to $TMPDIR"
 
 DB_FILE=""
+DB_WAL=""
+DB_SHM=""
 CONFIG_FILE=""
 for f in "$TMPDIR"/*.db; do
   [ -f "$f" ] && DB_FILE="$f" && break
+done
+for f in "$TMPDIR"/*.db-wal; do
+  [ -f "$f" ] && DB_WAL="$f" && break
+done
+for f in "$TMPDIR"/*.db-shm; do
+  [ -f "$f" ] && DB_SHM="$f" && break
 done
 for f in "$TMPDIR"/*.yaml; do
   [ -f "$f" ] && CONFIG_FILE="$f" && break
@@ -89,10 +97,13 @@ fi
 
 # Detect Docker
 CONTAINER=""
-if docker compose ps -q certwatch 2>/dev/null | grep -q .; then
-  CONTAINER="$(docker compose ps -q certwatch)"
-elif docker ps --filter "name=certwatch" --format '{{.Names}}' | grep -q .; then
-  CONTAINER="$(docker ps --filter "name=certwatch" --format '{{.Names}}' | head -1)"
+# Find CertWatch container (running or stopped)
+CONTAINER=""
+if docker compose ps -a 2>/dev/null | grep -q certwatch; then
+  CONTAINER="$(docker compose ps -aq certwatch 2>/dev/null | head -1)"
+fi
+if [ -z "$CONTAINER" ]; then
+  CONTAINER="$(docker ps -a --filter "name=certwatch" --format '{{.ID}}' | head -1)"
 fi
 
 if [ -n "$CONTAINER" ]; then
@@ -101,10 +112,19 @@ if [ -n "$CONTAINER" ]; then
 
   echo "Restoring database..."
   docker cp "$DB_FILE" "$CONTAINER":/data/certwatch.db
+  if [ -n "$DB_WAL" ]; then
+    docker cp "$DB_WAL" "$CONTAINER":/data/certwatch.db-wal
+  fi
+  if [ -n "$DB_SHM" ]; then
+    docker cp "$DB_SHM" "$CONTAINER":/data/certwatch.db-shm
+  fi
 
   if [ -n "$CONFIG_FILE" ]; then
-    echo "Restoring config..."
-    docker cp "$CONFIG_FILE" "$CONTAINER":/config/default.yaml
+    if docker cp "$CONFIG_FILE" "$CONTAINER":/config/default.yaml 2>/dev/null; then
+      echo "Restoring config..."
+    else
+      echo "Skipping config restore (config volume is read-only)"
+    fi
   fi
 
   echo "Starting CertWatch container..."
@@ -135,6 +155,12 @@ else
   DB_PATH="${CERTWATCH_DATABASE_DSN:-certwatch.db}"
   echo "Restoring database to $DB_PATH..."
   cp "$DB_FILE" "$DB_PATH"
+  if [ -n "$DB_WAL" ]; then
+    cp "$DB_WAL" "${DB_PATH}-wal"
+  fi
+  if [ -n "$DB_SHM" ]; then
+    cp "$DB_SHM" "${DB_PATH}-shm"
+  fi
 
   if [ -n "$CONFIG_FILE" ]; then
     CONFIG_PATH="${CERTWATCH_CONFIG:-config/default.yaml}"
