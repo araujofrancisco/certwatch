@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/araujofrancisco/certwatch/internal/models"
+	"github.com/araujofrancisco/certwatch/internal/services"
 )
 
 type createDomainRequest struct {
@@ -56,6 +58,51 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	writeJSON(w, http.StatusCreated, map[string]any{"domain": domain})
+}
+
+func (h *Handler) importDomains(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var raw struct {
+		Domains json.RawMessage `json:"domains"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil || len(raw.Domains) == 0 {
+		writeError(w, http.StatusBadRequest, "missing domains")
+		return
+	}
+
+	var pairs []services.BulkDomainEntry
+
+	var objs []struct {
+		Domain      string `json:"domain"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(raw.Domains, &objs); err == nil {
+		for _, o := range objs {
+			pairs = append(pairs, services.BulkDomainEntry{Domain: o.Domain, Description: o.Description})
+		}
+	} else {
+		var strs []string
+		if err := json.Unmarshal(raw.Domains, &strs); err != nil {
+			writeError(w, http.StatusBadRequest, "domains must be an array of objects or strings")
+			return
+		}
+		for _, s := range strs {
+			pairs = append(pairs, services.BulkDomainEntry{Domain: s})
+		}
+	}
+
+	if len(pairs) == 0 {
+		writeError(w, http.StatusBadRequest, "missing domains")
+		return
+	}
+
+	result := h.domains.BulkAddDomains(pairs)
+	status := http.StatusOK
+	if result.Summary.Errors > 0 {
+		status = http.StatusBadRequest
+	}
+	writeJSON(w, status, result)
 }
 
 func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {

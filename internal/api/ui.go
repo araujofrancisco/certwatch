@@ -33,7 +33,7 @@ var pageTemplates map[string]*pageTmpl
 func init() {
 	pageTemplates = make(map[string]*pageTmpl)
 
-	for _, p := range []string{"dashboard", "domains", "domain-detail", "certificates", "reports"} {
+	for _, p := range []string{"dashboard", "domains", "domain-detail", "certificates", "reports", "import"} {
 		tmpl := template.Must(template.ParseFS(templateFS,
 			"web/templates/layout.html",
 			"web/templates/"+p+".html",
@@ -96,6 +96,10 @@ func (h *Handler) RegisterUIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /reports", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "reports", pageData{Title: "Reports", Active: "reports"})
+	})
+
+	mux.HandleFunc("GET /import", func(w http.ResponseWriter, r *http.Request) {
+		renderPage(w, "import", pageData{Title: "Import Domains", Active: "import"})
 	})
 }
 

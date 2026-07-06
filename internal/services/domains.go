@@ -135,6 +135,91 @@ func (s *DomainService) updateCert(existing *models.Certificate, result *discove
 	return existing
 }
 
+type BulkDomainEntry struct {
+	Domain      string
+	Description string
+}
+
+type BulkAddResult struct {
+	Domain      string `json:"domain"`
+	Status      string `json:"status"` // "created", "skipped", "error"
+	Error       string `json:"error,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type BulkAddSummary struct {
+	Total   int `json:"total"`
+	Created int `json:"created"`
+	Skipped int `json:"skipped"`
+	Errors  int `json:"errors"`
+}
+
+type BulkAddResponse struct {
+	Results []*BulkAddResult `json:"results"`
+	Summary BulkAddSummary   `json:"summary"`
+}
+
+func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse {
+	var results []*BulkAddResult
+	var summary BulkAddSummary
+
+	for _, p := range pairs {
+		res := &BulkAddResult{Domain: p.Domain, Description: p.Description}
+
+		domain := strings.TrimSpace(strings.ToLower(p.Domain))
+		if domain == "" {
+			res.Status = "skipped"
+			res.Error = "empty domain"
+			summary.Skipped++
+			results = append(results, res)
+			continue
+		}
+		if !isValidDomain(domain) {
+			res.Status = "error"
+			res.Error = "invalid domain name"
+			summary.Errors++
+			results = append(results, res)
+			continue
+		}
+
+		existing, err := s.domains.FindByDomain(domain)
+		if err == nil && existing != nil {
+			res.Status = "skipped"
+			res.Error = "already exists"
+			summary.Skipped++
+			results = append(results, res)
+			continue
+		}
+
+		d := &models.Domain{
+			Domain:      domain,
+			Description: p.Description,
+			Enabled:     true,
+		}
+		if err := s.domains.Create(d); err != nil {
+			res.Status = "error"
+			res.Error = err.Error()
+			summary.Errors++
+			results = append(results, res)
+			continue
+		}
+
+		res.Status = "created"
+
+		go func(id int64, name string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			_, _ = s.ScanDomain(ctx, id, 30*time.Second)
+		}(d.ID, d.Domain)
+
+		summary.Created++
+		results = append(results, res)
+	}
+
+	summary.Total = summary.Created + summary.Skipped + summary.Errors
+	return &BulkAddResponse{Results: results, Summary: summary}
+}
+
 func (s *DomainService) ScanAllDomains(ctx context.Context, timeout time.Duration) ([]*models.Certificate, error) {
 	domains, err := s.domains.ListEnabled()
 	if err != nil {

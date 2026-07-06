@@ -65,6 +65,7 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 4 tab
 | `POST` | `/api/auth/login` | RL | Login, get JWT |
 | `GET` | `/api/domains` | Yes | List domains (`?q=&enabled=`) |
 | `POST` | `/api/domains` | Yes | Add domain (auto-scans in background) |
+| `POST` | `/api/domains/import` | Yes | Bulk import domains (array of objects or plain strings) |
 | `GET` | `/api/domains/{id}` | Yes | Get domain |
 | `DELETE` | `/api/domains/{id}` | Yes | Delete domain + cascade certs |
 | `POST` | `/api/domains/{id}/scan` | Yes | Scan domain |

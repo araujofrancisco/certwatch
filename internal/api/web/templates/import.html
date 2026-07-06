@@ -1,0 +1,99 @@
+{{define "page"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+  <h1 class="h2">Import Domains</h1>
+</div>
+<div class="row">
+  <div class="col-md-8">
+    <div class="card mb-4">
+      <div class="card-body">
+        <div id="importError" class="alert alert-danger d-none"></div>
+        <div class="mb-3">
+          <label class="form-label">Domains (one per line)</label>
+          <textarea class="form-control" id="domainList" rows="10" placeholder="example.com&#10;example.org&#10;example.net"></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description (optional, applies to all)</label>
+          <input type="text" class="form-control" id="importDescription" placeholder="Imported domains">
+        </div>
+        <button class="btn btn-primary" id="importBtn">Import</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="row">
+  <div class="col-md-8">
+    <div id="resultsArea" class="d-none">
+      <h3>Results</h3>
+      <div id="summaryRow" class="mb-3"></div>
+      <div class="table-responsive">
+        <table class="table table-striped" id="resultsTable">
+          <thead><tr><th>Domain</th><th>Status</th><th>Details</th></tr></thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+document.getElementById('importBtn').addEventListener('click', async () => {
+  const text = document.getElementById('domainList').value;
+  const description = document.getElementById('importDescription').value;
+  const errEl = document.getElementById('importError');
+  errEl.classList.add('d-none');
+
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) {
+    errEl.textContent = 'Enter at least one domain';
+    errEl.classList.remove('d-none');
+    return;
+  }
+
+  document.getElementById('importBtn').disabled = true;
+  document.getElementById('importBtn').textContent = 'Importing...';
+
+  const domains = lines.map(d => ({domain: d, description}));
+  const data = await apiFetch('/api/domains/import', {
+    method: 'POST',
+    body: JSON.stringify({domains})
+  });
+
+  document.getElementById('importBtn').disabled = false;
+  document.getElementById('importBtn').textContent = 'Import';
+
+  if (!data || !data.results) {
+    errEl.textContent = data && data.error ? data.error : 'Import failed';
+    errEl.classList.remove('d-none');
+    return;
+  }
+
+  const s = data.summary;
+  document.getElementById('summaryRow').innerHTML = `
+    <span class="badge bg-primary me-2">Total: ${s.total}</span>
+    <span class="badge bg-success me-2">Created: ${s.created}</span>
+    <span class="badge bg-warning me-2">Skipped: ${s.skipped}</span>
+    <span class="badge bg-danger me-2">Errors: ${s.errors}</span>
+  `;
+
+  const tbody = document.getElementById('resultsBody');
+  tbody.innerHTML = '';
+  data.results.forEach(r => {
+    let badgeClass = 'bg-success';
+    if (r.status === 'skipped') badgeClass = 'bg-warning';
+    if (r.status === 'error') badgeClass = 'bg-danger';
+    const details = r.error ? escapeHtml(r.error) : (r.description ? escapeHtml(r.description) : '-');
+    tbody.innerHTML += `<tr>
+      <td>${escapeHtml(r.domain)}</td>
+      <td><span class="badge ${badgeClass}">${r.status}</span></td>
+      <td>${details}</td>
+    </tr>`;
+  });
+
+  document.getElementById('resultsArea').classList.remove('d-none');
+  document.getElementById('domainList').value = '';
+  document.getElementById('importDescription').value = '';
+});
+requireAuth();
+</script>
+{{end}}
