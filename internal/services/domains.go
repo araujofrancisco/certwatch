@@ -88,7 +88,7 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 		Status:      "error",
 		LastChecked: time.Now(),
 	}
-	s.certs.Create(cert)
+	_ = s.certs.Create(cert)
 	return cert, fmt.Errorf("all scanners failed: %w", lastErr)
 }
 
@@ -116,7 +116,7 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 		}
 	}
 
-	s.certs.Create(cert)
+	_ = s.certs.Create(cert)
 	return cert
 }
 
@@ -131,7 +131,7 @@ func (s *DomainService) updateCert(existing *models.Certificate, result *discove
 		existing.Fingerprint = result.Fingerprint
 	}
 	existing.Protocol = result.Protocol
-	s.certs.Update(existing)
+	_ = s.certs.Update(existing)
 	return existing
 }
 

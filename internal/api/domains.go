@@ -52,7 +52,7 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		h.domains.ScanDomain(ctx, domain.ID, 30*time.Second)
+		_, _ = h.domains.ScanDomain(ctx, domain.ID, 30*time.Second)
 	}()
 
 	writeJSON(w, http.StatusCreated, map[string]any{"domain": domain})

@@ -62,7 +62,7 @@ logging:
 `)
 	tmp, _ := os.CreateTemp("", "config-*.yaml")
 	defer os.Remove(tmp.Name())
-	tmp.Write(content)
+	_, _ = tmp.Write(content)
 	tmp.Close()
 
 	cfg, err := Load(tmp.Name())
@@ -80,7 +80,7 @@ logging:
 func TestLoad_MalformedYAML(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "config-*.yaml")
 	defer os.Remove(tmp.Name())
-	tmp.WriteString("{{{{{invalid yaml")
+	_, _ = tmp.WriteString("{{{{{invalid yaml")
 	tmp.Close()
 
 	_, err := Load(tmp.Name())

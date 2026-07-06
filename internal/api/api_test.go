@@ -68,7 +68,7 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 	var body map[string]string
-	json.NewDecoder(rec.Body).Decode(&body)
+	_ = json.NewDecoder(rec.Body).Decode(&body)
 	if body["status"] != "ok" {
 		t.Errorf("expected ok, got %s", body["status"])
 	}
@@ -99,7 +99,7 @@ func TestRegisterAndLogin(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec2.Code)
 	}
 	var resp map[string]any
-	json.NewDecoder(rec2.Body).Decode(&resp)
+	_ = json.NewDecoder(rec2.Body).Decode(&resp)
 	if resp["token"] == "" {
 		t.Error("expected token in response")
 	}
@@ -143,7 +143,7 @@ func TestListDomains(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec2.Code)
 	}
 	var resp map[string]any
-	json.NewDecoder(rec2.Body).Decode(&resp)
+	_ = json.NewDecoder(rec2.Body).Decode(&resp)
 	domains := resp["domains"].([]any)
 	if len(domains) != 1 {
 		t.Errorf("expected 1 domain, got %d", len(domains))

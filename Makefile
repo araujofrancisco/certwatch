@@ -18,7 +18,7 @@ run:
 test:
 	$(GO) test ./... -v -count=1
 
-LINT_VERSION := v1.59.1
+LINT_VERSION := v1.64.8
 
 lint:
 	@which golangci-lint >/dev/null 2>&1 || (echo "installing golangci-lint"; go install github.com/golangci-lint/golangci-lint/cmd/golangci-lint@$(LINT_VERSION))

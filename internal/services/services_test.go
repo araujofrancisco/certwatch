@@ -72,8 +72,8 @@ func TestAddDomainEmpty(t *testing.T) {
 
 func TestListDomains(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	domainSvc.AddDomain("example.com", "test")
-	domainSvc.AddDomain("example.org", "test2")
+	_, _ = domainSvc.AddDomain("example.com", "test")
+	_, _ = domainSvc.AddDomain("example.org", "test2")
 
 	domains, err := domainSvc.ListDomains()
 	if err != nil {

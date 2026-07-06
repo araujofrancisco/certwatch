@@ -57,7 +57,7 @@ func TestHTTPSScannerWithTestServer(t *testing.T) {
 			return
 		}
 		tlsConn := conn.(*tls.Conn)
-		tlsConn.Handshake()
+		_ = tlsConn.Handshake()
 		conn.Close()
 	}()
 

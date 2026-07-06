@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestSendEmailNoSMTP(t *testing.T) {
 		SMTP: config.SMTPConfig{Host: "", Port: 0, From: ""},
 	}
 	n := New(cfg)
-	err := n.SendEmail(nil, []string{"test@example.com"}, "Test", "Body")
+	err := n.SendEmail(context.TODO(), []string{"test@example.com"}, "Test", "Body")
 	if err != nil {
 		t.Errorf("expected no error when SMTP not configured, got: %v", err)
 	}
