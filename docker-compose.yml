@@ -6,6 +6,7 @@ services:
     volumes:
       - certwatch-data:/data
       - ./config:/config:ro
+      # - ./backups:/backups   # uncomment for direct host-bound backup writes
     environment:
       - CERTWATCH_CONFIG=/config/default.yaml
       - CERTWATCH_DATABASE_DSN=/data/certwatch.db

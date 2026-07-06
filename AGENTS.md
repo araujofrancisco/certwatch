@@ -1,7 +1,7 @@
 # CertWatch — Agent instructions
 
 ## Status
-Phases 1–5 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS scanner, Bootstrap 5 web UI, cron notifications, reports). 84 tests pass. Security audit: 24/25 issues fixed (`docs/audit-report.md`).
+Phases 1–6 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS scanner, Bootstrap 5 web UI, cron notifications, reports, backup/restore scripts). 84 tests pass. Security audit: 24/25 issues fixed (`docs/audit-report.md`).
 
 Git repo: `github.com/araujofrancisco/certwatch` — all committed on `main`.
 
@@ -15,6 +15,8 @@ make test        # go test ./... -v -count=1
 make lint        # golangci-lint v1.59.1 (auto-installed if missing)
 make tidy        # go mod tidy
 make docker-build / docker-run / docker-stop / docker-logs
+make backup       # scripts/backup.sh — timestamped archive of DB + config
+make restore      # scripts/restore.sh — interactive restore from backup
 ```
 Single-package test: `go test ./internal/services/ -v -count=1`
 

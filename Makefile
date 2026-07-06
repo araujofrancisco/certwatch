@@ -4,7 +4,7 @@ GO        := go
 GOFLAGS   := -ldflags="-s -w"
 BUILDDIR  := build
 
-.PHONY: all build run test lint clean docker-build docker-run
+.PHONY: all build run test lint clean docker-build docker-run docker-stop docker-logs backup restore
 
 all: lint test build
 
@@ -41,3 +41,12 @@ docker-stop:
 
 docker-logs:
 	docker compose logs -f
+
+backup:
+	@scripts/backup.sh
+
+restore:
+	@scripts/restore.sh $(filter-out $@,$(MAKECMDGOALS))
+
+%:
+	@:

@@ -1,6 +1,6 @@
 # Directory layout
 
-> Phase: 5 · Status: Updated — Reports handler added
+> Phase: 6 · Status: Updated — Backup/restore scripts added
 
 Repository root is `certwatch/` at `github.com/araujofrancisco/certwatch`.
 
@@ -8,6 +8,9 @@ Repository root is `certwatch/` at `github.com/araujofrancisco/certwatch`.
 certwatch/
 ├── cmd/
 │   └── certwatch/            ✅ Main entrypoint with DI wiring + background jobs
+├── scripts/                  🔹 Backup & restore utilities (Phase 6)
+│   ├── backup.sh             ✅ Timestamped backup of DB + config
+│   └── restore.sh            ✅ Interactive restore from backup
 ├── internal/
 │   ├── api/                  ✅ REST API + Web UI + Reports
 │   │   ├── api.go            ✅ REST handler registration
@@ -31,6 +34,7 @@ certwatch/
 │   ├── models/               ✅ Domain types + filter structs
 │   ├── repository/           ✅ CRUD data access layer (parameterized SQL)
 │   └── services/             ✅ Business logic layer
+├── backups/                  ⬜ Backup archives (created by backup.sh)
 ├── config/                   ✅ Default YAML config with all sections
 ├── docs/                     ✅ Documentation — start at _index.md
 ├── .github/workflows/        ✅ CI pipeline (lint → test → build → tidy)
