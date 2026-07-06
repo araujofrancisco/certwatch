@@ -7,14 +7,16 @@ CertWatch discovers certificates across multiple protocols, tracks expiry dates,
 ## Features
 
 - **REST API** — manage domains, certificates, and auth programmatically
+- **Bulk import** — add many domains at once via API or web UI (objects or plain strings)
 - **Certificate discovery** — HTTPS (SNI-aware) + Certificate Transparency (crt.sh) + 6 protocol stubs
 - **Server-side filtering** — domains and certificates list endpoints support multi-criteria query params
 - **Expiration monitoring** — track expiry across all discovered certificates
 - **Email notifications** — immediate alerts at configurable thresholds, plus daily/weekly digest reports
 - **Cron scheduling** — 5-field POSIX cron with timezone support
-- **Web dashboard** — Bootstrap 5 UI with summary cards, filters, inventory reports, CSV/JSON export
+- **Web dashboard** — Bootstrap 5 UI with summary cards, filters, inventory reports, CSV/JSON export, bulk import
 - **Auto-scan on add** — domains scanned in background immediately after creation
 - **Certificate dedup** — fingerprint + serial/issuer matching to prevent duplicates
+- **Backup & restore** — timestamped online snapshots with 30-day retention, Docker & standalone support
 - **Docker deployment** — multi-stage scratch image
 - **Input validation** — domain format validation, email format check, request body size limits (1 MB)
 - **Rate limiting** — 10 requests/minute per IP on auth endpoints
@@ -67,9 +69,10 @@ discovery:
 | 3 — Web UI | ✅ Complete | Bootstrap 5 dashboard, 7 pages, embed served |
 | 4 — Notification | ✅ Complete | SMTP alerts, daily/weekly digests, cron scheduler |
 | 5 — Reports | ✅ Complete | Inventory API + UI with summary cards, filters, export |
-| 6 — Production | ⬜ | Reverse proxy, backup/restore scripts |
-| 7 — API docs | ⬜ | OpenAPI/Swagger |
-| 8 — Testing | ⬜ | Integration, Docker tests |
+| 6 — Backup | ✅ Complete | Backup/restore scripts, 30-day retention, Docker & standalone |
+| 7 — Bulk import | ✅ Complete | Multi-domain import via API + web UI |
+| 8 — API docs | ⬜ | OpenAPI/Swagger |
+| 9 — Testing | ⬜ | Integration, Docker tests |
 
 ## Architecture
 
@@ -94,6 +97,7 @@ cmd/certwatch/ → internal/api/ → internal/services/ → internal/repository/
 | `POST` | `/api/auth/login` | RL | Login, get JWT |
 | `GET` | `/api/domains` | Yes | List domains (`?q=&enabled=`) |
 | `POST` | `/api/domains` | Yes | Add domain (auto-scans in background) |
+| `POST` | `/api/domains/import` | Yes | Bulk import domains (objects or plain strings) |
 | `GET` | `/api/domains/{id}` | Yes | Get domain |
 | `DELETE` | `/api/domains/{id}` | Yes | Delete domain + cascade certs |
 | `POST` | `/api/domains/{id}/scan` | Yes | Scan domain |
@@ -114,6 +118,7 @@ RL = rate-limited (10 req/min per IP)
 | `/dashboard` | Summary cards + expiring certs table |
 | `/domains` | Domain CRUD table with search/enabled filter |
 | `/domains/{id}` | Domain detail + certificate history + purge errors |
+| `/import` | Bulk import domains (paste one per line) |
 | `/certificates` | All certs sorted by expiry with filters |
 | `/reports` | Inventory with summary stats, filters, JSON/CSV |
 
@@ -127,7 +132,7 @@ RL = rate-limited (10 req/min per IP)
 
 ## Stack
 
-- **Language**: Go 1.22+
+- **Language**: Go 1.25+
 - **Database**: SQLite (pure Go via modernc.org/sqlite, no CGO)
-- **UI**: Bootstrap 5 served via Go embed (no build step required)
+- **UI**: Bootstrap 5 served via Go embed (no build step required), 10 HTML templates
 - **Deployment**: Docker (multi-stage scratch), Docker Compose

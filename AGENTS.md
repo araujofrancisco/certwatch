@@ -1,7 +1,7 @@
 # CertWatch — Agent instructions
 
 ## Status
-Phases 1–6 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS scanner, Bootstrap 5 web UI, cron notifications, reports, backup/restore scripts). 84 tests pass. Security audit: 24/25 issues fixed (`docs/audit-report.md`).
+Phases 1–7 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS scanner, Bootstrap 5 web UI, cron notifications, reports, backup/restore scripts, bulk import). 84 tests pass. Security audit: 24/25 issues fixed (`docs/audit-report.md`).
 
 Git repo: `github.com/araujofrancisco/certwatch` — all committed on `main`.
 
@@ -12,7 +12,7 @@ Module: `github.com/araujofrancisco/certwatch` — matches all import paths.
 make build       # static binary → build/certwatch (CGO_ENABLED=0)
 make run         # go run ./cmd/certwatch/
 make test        # go test ./... -v -count=1
-make lint        # golangci-lint v1.59.1 (auto-installed if missing)
+make lint        # golangci-lint v1.64.8 (auto-installed if missing)
 make tidy        # go mod tidy
 make docker-build / docker-run / docker-stop / docker-logs
 make backup       # scripts/backup.sh — timestamped archive of DB + config
@@ -43,10 +43,10 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 4 tab
 - **Certificate dedup**: `saveCertificate` checks fingerprint first, then `serial+issuer`. Updates existing cert if match found.
 - **Scheduler**: not cron-daemon — polls every 30s via `time.NewTicker`
 - **Notification dedup**: in-memory map `${certID}:${threshold}` (lost on restart)
-- **Web UI**: Go embed (`//go:embed`), no build step. 9 HTML templates at `internal/api/web/templates/`, static at `internal/api/web/static/`. Templates use `{{define "page"}}` to avoid name collisions.
+- **Web UI**: Go embed (`//go:embed`), no build step. 10 HTML templates at `internal/api/web/templates/`, static at `internal/api/web/static/`. Templates use `{{define "page"}}` to avoid name collisions.
 - **Server-side filtering**: `GET /api/domains` and `GET /api/certificates` accept query params (`q`, `status`, `protocol`, `domain_id`, `expiring`, `expired`, `enabled`). Dynamic SQL with `LIKE` and parameterized queries.
 - **Reports**: `GET /api/reports/inventory` returns combined domain+cert data with summary stats. UI has summary cards, client-side filters, CSV/JSON download buttons.
-- **CI** (`.github/workflows/ci.yml`): lint → test → build → check tidy. Go version 1.22.5 (doesn't match go.mod 1.25.0 or Dockerfile 1.25-alpine)
+- **CI** (`.github/workflows/ci.yml`): lint → test → build → check tidy. setup-go installs 1.22.5, toolchain auto-downloads 1.25.0 from go.mod requirement
 - **Route patterns**: Go 1.22+ syntax `"METHOD /path"` with `http.NewServeMux`
 - **Logging**: `slog`, not logrus/zap
 

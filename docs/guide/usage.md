@@ -141,6 +141,21 @@ curl "http://localhost:8080/api/domains?q=example&enabled=true" \
 curl http://localhost:8080/api/domains/1 \
   -H "Authorization: Bearer <token>"
 
+# Bulk import domains (array of objects)
+curl -X POST http://localhost:8080/api/domains/import \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"domains":[{"domain":"example.com","description":"Site A"},{"domain":"example.org"}]}'
+
+# Bulk import domains (plain string array)
+curl -X POST http://localhost:8080/api/domains/import \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"domains":["example.com","example.org","example.net"]}'
+
+# Response format
+# {"results":[{"domain":"example.com","status":"created"},...],"summary":{"total":3,"created":2,"skipped":1,"errors":0}}
+
 # Delete domain (cascade deletes certificates)
 curl -X DELETE http://localhost:8080/api/domains/1 \
   -H "Authorization: Bearer <token>"
@@ -212,10 +227,24 @@ The built-in web dashboard is served via Go embed — no separate build step req
 | `/dashboard` | Summary cards (healthy/warning/expired counts) + expiring certificates |
 | `/domains` | Domain list with search, enabled filter, scan/delete actions |
 | `/domains/{id}` | Domain detail with certificate history and purge errors button |
+| `/import` | Bulk import domains (paste one per line) |
 | `/certificates` | All certificates with search, status/protocol/expiry filters |
 | `/reports` | Inventory report with summary stats, client-side filters, JSON/CSV download |
 
 The UI communicates with the same REST API endpoints using the JWT token stored in `localStorage` after login.
+
+### Bulk import
+
+The import page (`/import`) accepts domains pasted one per line in a textarea, with an optional description applied to all. Results are shown inline with status badges and summary counts.
+
+**Supported formats (API):**
+
+| Format | Example |
+|--------|---------|
+| Objects with description | `{"domains":[{"domain":"a.com","description":"My site"}]}` |
+| Plain strings | `{"domains":["a.com","b.com"]}` |
+
+Each domain is validated, deduplicated, created, and auto-scanned in a background goroutine. Duplicates and invalid domains produce status `skipped` or `error` without failing the entire batch.
 
 ## Health check
 

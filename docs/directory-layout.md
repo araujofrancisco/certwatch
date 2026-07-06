@@ -1,6 +1,6 @@
 # Directory layout
 
-> Phase: 6 · Status: Updated — Backup/restore scripts added
+> Phase: 7 · Status: Updated — Backup/restore scripts, bulk import added
 
 Repository root is `certwatch/` at `github.com/araujofrancisco/certwatch`.
 
@@ -15,12 +15,15 @@ certwatch/
 │   ├── api/                  ✅ REST API + Web UI + Reports
 │   │   ├── api.go            ✅ REST handler registration
 │   │   ├── auth.go           ✅ Auth endpoints
-│   │   ├── domains.go        ✅ Domain CRUD + scan + auto-scan on add
+│   │   ├── domains.go        ✅ Domain CRUD + scan + auto-scan + bulk import
 │   │   ├── certificates.go   ✅ Certificate endpoints + purge errors + filters
 │   │   ├── reports.go        ✅ Inventory report API (Phase 5)
 │   │   ├── ui.go             ✅ Go embed UI handler with per-page templates
 │   │   └── web/
-│   │       ├── templates/    ✅ 9 HTML pages (Bootstrap 5)
+│   │       ├── templates/    ✅ 10 HTML pages (Bootstrap 5) — added import.html
+│   │       │   ├── layout.html / dashboard.html / domains.html / domain-detail.html
+│   │       │   ├── certificates.html / reports.html / import.html
+│   │       │   └── auth-layout.html / login.html / register.html
 │   │       └── static/       ✅ CSS + JS
 │   ├── auth/                 ✅ JWT authentication + bcrypt
 │   ├── config/               ✅ Configuration loader (YAML + env vars)
