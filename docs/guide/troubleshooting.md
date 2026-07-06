@@ -46,7 +46,7 @@ rm certwatch.db   # delete (backup first) and restart
 Or from Docker:
 ```bash
 docker compose down
-docker volume rm ssl-monitoring_certwatch-data
+docker volume rm certwatch_certwatch-data
 docker compose up -d
 ```
 

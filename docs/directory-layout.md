@@ -2,7 +2,7 @@
 
 > Phase: 3 · Status: Updated — Web UI entries added
 
-Repository root on disk is `ssl-monitoring`. The planned project root is `certwatch/` — the top-level directory should be renamed on initial commit.
+Repository root is `certwatch/` at `github.com/araujofrancisco/certwatch`.
 
 Legend: ✅ exists now, ⬜ planned.
 

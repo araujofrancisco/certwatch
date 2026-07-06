@@ -7,7 +7,7 @@ Phases 1–4 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS scanner,
 ```bash
 git init
 ```
-No git repo yet. Disk dir is `certwatch/` (will need rename from `ssl-monitoring` on commit per `docs/directory-layout.md`).
+Git repo initialized — all committed on `main` at `github.com/araujofrancisco/certwatch`.
 
 Module: `github.com/araujofrancisco/certwatch` — already matches all import paths.
 
