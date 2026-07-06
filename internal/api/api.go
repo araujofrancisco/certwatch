@@ -43,6 +43,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/domains/{id}/certificates", authMiddleware(http.HandlerFunc(h.listDomainCertificates)))
 	mux.Handle("DELETE /api/domains/{id}/certificates/errors", authMiddleware(http.HandlerFunc(h.purgeDomainCertificateErrors)))
 
+	mux.Handle("GET /api/reports/inventory", authMiddleware(http.HandlerFunc(h.inventoryReport)))
+
 	h.RegisterUIRoutes(mux)
 }
 

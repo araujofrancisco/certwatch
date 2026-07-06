@@ -1,38 +1,167 @@
 {{define "page"}}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
   <h1 class="h2">Reports</h1>
+  <div>
+    <button class="btn btn-outline-primary" onclick="downloadJSON()">Download JSON</button>
+    <button class="btn btn-outline-secondary" id="downloadCsvBtn" onclick="downloadCSV()">Download CSV</button>
+  </div>
 </div>
-<div class="row">
-  <div class="col-md-6 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h5 class="card-title">Certificate Inventory</h5>
-        <p class="card-text">JSON snapshot of all domains and their latest certificates.</p>
-        <a href="/api/reports/inventory" class="btn btn-primary disabled">View JSON (Phase 5)</a>
-        <a href="#" class="btn btn-outline-secondary disabled">Download CSV (Phase 5)</a>
+<div class="row mb-3" id="summaryCards">
+  <div class="col-md-2 mb-2">
+    <div class="card card-dashboard">
+      <div class="card-body text-center py-3">
+        <h6 class="card-title text-muted mb-1">Domains</h6>
+        <p class="card-text display-6 mb-0" id="statTotal">-</p>
       </div>
     </div>
   </div>
-  <div class="col-md-6 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h5 class="card-title">Prometheus Metrics</h5>
-        <p class="card-text">Expose certificate metrics in Prometheus format for monitoring.</p>
-        <a href="#" class="btn btn-outline-secondary disabled">View Metrics (Phase 5)</a>
+  <div class="col-md-2 mb-2">
+    <div class="card card-dashboard healthy">
+      <div class="card-body text-center py-3">
+        <h6 class="card-title text-muted mb-1">Valid</h6>
+        <p class="card-text display-6 mb-0" id="statValid">-</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-2 mb-2">
+    <div class="card card-dashboard warning">
+      <div class="card-body text-center py-3">
+        <h6 class="card-title text-muted mb-1">Expiring (≤14d)</h6>
+        <p class="card-text display-6 mb-0" id="statExpiring">-</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-2 mb-2">
+    <div class="card card-dashboard critical">
+      <div class="card-body text-center py-3">
+        <h6 class="card-title text-muted mb-1">Expired</h6>
+        <p class="card-text display-6 mb-0" id="statExpired">-</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-2 mb-2">
+    <div class="card card-dashboard" style="border-left-color: #6f42c1;">
+      <div class="card-body text-center py-3">
+        <h6 class="card-title text-muted mb-1">Errors</h6>
+        <p class="card-text display-6 mb-0" id="statErrors">-</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-2 mb-2">
+    <div class="card card-dashboard" style="border-left-color: #6c757d;">
+      <div class="card-body text-center py-3">
+        <h6 class="card-title text-muted mb-1">No Cert</h6>
+        <p class="card-text display-6 mb-0" id="statNoCert">-</p>
       </div>
     </div>
   </div>
 </div>
-<h3 class="mt-4">Inventory</h3>
+<div class="row mb-3 g-2">
+  <div class="col-md-4">
+    <input type="text" class="form-control" id="reportSearch" placeholder="Search domain..." oninput="loadReports()">
+  </div>
+  <div class="col-md-2">
+    <select class="form-select" id="reportStatus" onchange="loadReports()">
+      <option value="">All statuses</option>
+      <option value="valid">Valid</option>
+      <option value="expiring">Expiring</option>
+      <option value="expired">Expired</option>
+      <option value="error">Error</option>
+      <option value="none">No Certificate</option>
+    </select>
+  </div>
+</div>
 <div class="table-responsive">
   <table class="table table-striped" id="inventoryTable">
-    <thead><tr><th>Domain</th><th>Subject</th><th>Issuer</th><th>Expires</th><th>Days</th><th>Status</th></tr></thead>
+    <thead><tr><th>Domain</th><th>Subject</th><th>Issuer</th><th>Protocol</th><th>Expires</th><th>Days</th><th>Status</th></tr></thead>
     <tbody id="inventoryBody"></tbody>
   </table>
 </div>
 {{end}}
 {{define "scripts"}}
 <script>
+let loadReportsId = 0;
+async function loadReports() {
+  const id = ++loadReportsId;
+  const data = await apiFetch('/api/reports/inventory');
+  if (!data || id !== loadReportsId) return;
+  const summary = data.summary;
+  document.getElementById('statTotal').textContent = summary.total_domains;
+  document.getElementById('statValid').textContent = summary.valid;
+  document.getElementById('statExpiring').textContent = summary.expiring;
+  document.getElementById('statExpired').textContent = summary.expired;
+  document.getElementById('statErrors').textContent = summary.errors;
+  document.getElementById('statNoCert').textContent = summary.total_domains - summary.with_certs;
+
+  const q = document.getElementById('reportSearch').value.toLowerCase();
+  const statusFilter = document.getElementById('reportStatus').value;
+
+  const tbody = document.getElementById('inventoryBody');
+  if (id !== loadReportsId) return;
+  tbody.innerHTML = '';
+
+  data.inventory.sort((a, b) => a.days_remaining - b.days_remaining);
+
+  data.inventory.forEach(entry => {
+    const d = entry.domain;
+    const c = entry.latest_cert;
+    const days = entry.days_remaining;
+
+    if (q && !d.domain.toLowerCase().includes(q)) return;
+
+    if (statusFilter) {
+      const actualStatus = !c ? 'none' : (days <= 0 ? 'expired' : days <= 14 ? 'expiring' : c.status === 'error' ? 'error' : 'valid');
+      if (actualStatus !== statusFilter) return;
+    }
+
+    tbody.innerHTML += `<tr>
+      <td><a href="/domains/${d.id}">${escapeHtml(d.domain)}</a></td>
+      <td>${c ? escapeHtml(c.subject) : '-'}</td>
+      <td>${c ? escapeHtml(c.issuer) : '-'}</td>
+      <td>${c ? escapeHtml(c.protocol) : '-'}</td>
+      <td>${c ? new Date(c.not_after).toLocaleDateString() : '-'}</td>
+      <td class="${c ? statusClass(c.status) : ''}">${c ? days : '-'}</td>
+      <td>${c ? '<span class="' + statusClass(c.status) + '">' + escapeHtml(c.status) + '</span>' : '<span class="text-muted">no cert</span>'}</td>
+    </tr>`;
+  });
+}
+function downloadJSON() {
+  apiFetch('/api/reports/inventory').then(data => {
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'certwatch-inventory.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+function downloadCSV() {
+  apiFetch('/api/reports/inventory').then(data => {
+    if (!data) return;
+    const rows = [['Domain','Subject','Issuer','Protocol','Expires','Days','Status']];
+    data.inventory.forEach(e => {
+      const c = e.latest_cert || {};
+      rows.push([
+        e.domain.domain,
+        (c.subject || ''),
+        (c.issuer || ''),
+        (c.protocol || ''),
+        (c.not_after || ''),
+        e.days_remaining,
+        c.status || 'no cert'
+      ]);
+    });
+    const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'certwatch-inventory.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
 requireAuth();
+loadReports();
 </script>
 {{end}}

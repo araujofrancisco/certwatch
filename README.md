@@ -7,12 +7,15 @@ CertWatch discovers certificates across multiple protocols, tracks expiry dates,
 ## Features
 
 - **REST API** — manage domains, certificates, and auth programmatically
-- **Certificate discovery** — HTTPS scanner with 7 additional protocol stubs (SMTP STARTTLS, IMAPS, LDAPS, POP3, FTPS, generic TLS, Certificate Transparency)
+- **Certificate discovery** — HTTPS (SNI-aware) + Certificate Transparency (crt.sh) + 6 protocol stubs
+- **Server-side filtering** — domains and certificates list endpoints support multi-criteria query params
 - **Expiration monitoring** — track expiry across all discovered certificates
-- **Email notifications** — immediate alerts at configurable thresholds (30/14/7/3/1 days), plus daily/weekly digest reports
-- **Cron scheduling** — 5-field POSIX cron with timezone support (default America/New_York)
-- **Web dashboard** — Bootstrap 5 UI with login, domain management, certificate viewer, reports page
-- **Docker deployment** — multi-stage scratch image, runs as non-root user
+- **Email notifications** — immediate alerts at configurable thresholds, plus daily/weekly digest reports
+- **Cron scheduling** — 5-field POSIX cron with timezone support
+- **Web dashboard** — Bootstrap 5 UI with summary cards, filters, inventory reports, CSV/JSON export
+- **Auto-scan on add** — domains scanned in background immediately after creation
+- **Certificate dedup** — fingerprint + serial/issuer matching to prevent duplicates
+- **Docker deployment** — multi-stage scratch image
 - **Input validation** — domain format validation, email format check, request body size limits (1 MB)
 - **Rate limiting** — 10 requests/minute per IP on auth endpoints
 - **Security** — startup warning for default JWT secret, cascade delete, TLS SMTP option, notification dedup
@@ -20,7 +23,7 @@ CertWatch discovers certificates across multiple protocols, tracks expiry dates,
 ## Quick start
 
 ```bash
-make test       # 90+ tests, all pass
+make test       # 84 tests, all pass
 make build      # static binary → build/certwatch
 make run        # start on :8080
 ```
@@ -47,11 +50,9 @@ logging:
 auth:
   secret: "change-me-in-production"  # ⚠️ override in production
   token_ttl: "24h"
-notifications:
-  smtp:
-    host: ""
-    port: 587
-    force_tls: false                 # enable for explicit TLS
+discovery:
+  scan_interval: "6h"
+  timeout: "30s"
 ```
 
 [Full config reference →](docs/guide/usage.md)
@@ -61,11 +62,11 @@ notifications:
 
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
-| 1 — Foundation | ✅ Complete | Go scaffold, Docker, SQLite, config, logging, CI, 30 tests |
-| 2 — Backend | ✅ Complete | REST API, JWT auth, CRUD, HTTPS scanner + 7 stubs, 67 tests |
-| 3 — Web UI | ✅ Complete | Bootstrap 5 dashboard, 8 pages, embed served |
-| 4 — Notification | ✅ Complete | SMTP alerts, daily/weekly digests, cron scheduler, email templates |
-| 5 — Reports | ➡️ Partial | Inventory page (UI) — CSV/Prometheus pending |
+| 1 — Foundation | ✅ Complete | Go scaffold, Docker, SQLite, config, logging, CI |
+| 2 — Backend | ✅ Complete | REST API, JWT auth, CRUD, scanners, 84 tests |
+| 3 — Web UI | ✅ Complete | Bootstrap 5 dashboard, 7 pages, embed served |
+| 4 — Notification | ✅ Complete | SMTP alerts, daily/weekly digests, cron scheduler |
+| 5 — Reports | ✅ Complete | Inventory API + UI with summary cards, filters, export |
 | 6 — Production | ⬜ | Reverse proxy, backup/restore scripts |
 | 7 — API docs | ⬜ | OpenAPI/Swagger |
 | 8 — Testing | ⬜ | Integration, Docker tests |
@@ -88,16 +89,21 @@ cmd/certwatch/ → internal/api/ → internal/services/ → internal/repository/
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/health` | No | Health check |
-| `POST` | `/api/auth/register` | No | Register user |
-| `POST` | `/api/auth/login` | No | Login, get JWT |
-| `GET` | `/api/domains` | Yes | List domains |
-| `POST` | `/api/domains` | Yes | Add domain |
+| `GET` | `/health` | No | Health check (includes DB ping) |
+| `POST` | `/api/auth/register` | RL | Register user |
+| `POST` | `/api/auth/login` | RL | Login, get JWT |
+| `GET` | `/api/domains` | Yes | List domains (`?q=&enabled=`) |
+| `POST` | `/api/domains` | Yes | Add domain (auto-scans in background) |
 | `GET` | `/api/domains/{id}` | Yes | Get domain |
-| `DELETE` | `/api/domains/{id}` | Yes | Delete domain |
-| `POST` | `/api/domains/{id}/scan` | Yes | Trigger HTTPS scan |
-| `GET` | `/api/certificates` | Yes | List all certs |
+| `DELETE` | `/api/domains/{id}` | Yes | Delete domain + cascade certs |
+| `POST` | `/api/domains/{id}/scan` | Yes | Scan domain |
+| `GET` | `/api/certificates` | Yes | List certs (`?q=&status=&protocol=&domain_id=&expiring=&expired=`) |
 | `GET` | `/api/domains/{id}/certificates` | Yes | List certs for domain |
+| `DELETE` | `/api/certificates/errors` | Yes | Purge all error certs |
+| `DELETE` | `/api/domains/{id}/certificates/errors` | Yes | Purge error certs for domain |
+| `GET` | `/api/reports/inventory` | Yes | Inventory report with summary stats |
+
+RL = rate-limited (10 req/min per IP)
 
 ## Web UI routes
 
@@ -106,14 +112,14 @@ cmd/certwatch/ → internal/api/ → internal/services/ → internal/repository/
 | `/login` | Sign in with email/password |
 | `/register` | Create account |
 | `/dashboard` | Summary cards + expiring certs table |
-| `/domains` | Domain CRUD table with scan/delete actions |
-| `/domains/{id}` | Domain detail + certificate history |
-| `/certificates` | All certs sorted by expiry |
-| `/reports` | Inventory page with CSV/metrics links |
+| `/domains` | Domain CRUD table with search/enabled filter |
+| `/domains/{id}` | Domain detail + certificate history + purge errors |
+| `/certificates` | All certs sorted by expiry with filters |
+| `/reports` | Inventory with summary stats, filters, JSON/CSV |
 
 ## Documentation
 
-- [Usage guide](docs/guide/usage.md) — configuration, API, web UI, health check, notifications
+- [Usage guide](docs/guide/usage.md) — configuration, API, web UI, notifications
 - [Deployment guide](docs/guide/deployment.md) — Docker, production setup
 - [Troubleshooting](docs/guide/troubleshooting.md) — common issues and fixes
 - [Architecture](docs/architecture.md) — layer diagram and conventions
@@ -122,6 +128,6 @@ cmd/certwatch/ → internal/api/ → internal/services/ → internal/repository/
 ## Stack
 
 - **Language**: Go 1.22+
-- **Database**: SQLite
+- **Database**: SQLite (pure Go via modernc.org/sqlite, no CGO)
 - **UI**: Bootstrap 5 served via Go embed (no build step required)
-- **Deployment**: Docker (multi-stage scratch, non-root user), Docker Compose
+- **Deployment**: Docker (multi-stage scratch), Docker Compose

@@ -1,26 +1,23 @@
 # Architecture
 
-> Phase: 3 · Status: Updated — Web UI (Phase 3) layer added
+> Phase: 5 · Status: Updated — Reports (Phase 5) added
 
 ## Pattern
 Clean architecture with dependency injection. Layer boundaries enforced by Go package imports — outer layers depend on inner layers, never the reverse.
 
 ```mermaid
 graph TD
-    subgraph "Phase 1 ✅"
+    subgraph "Phases 1-5 ✅"
         cmd/certwatch/ --> internal/config/
         cmd/certwatch/ --> internal/logging/
         cmd/certwatch/ --> internal/database/
-    end
-    subgraph "Phase 2+3+4 ✅"
         cmd/certwatch/ --> internal/api/ --> internal/services/ --> internal/repository/
         internal/repository/ --> internal/database/
         internal/services/ --> internal/discovery/
         internal/api/ --> internal/auth/ --> internal/middleware/
         internal/api/ --> U[internal/api/web/ 🔹 Phase 3 UI]
         U --> T[templates/ + static/]
-    end
-    subgraph "Phase 4 ✅"
+        internal/api/ --> R[internal/api/reports.go 🔹 Phase 5]
         internal/services/ --> internal/notifier/ --> internal/scheduler/
         internal/services/ --> internal/templates/
     end
@@ -44,11 +41,22 @@ graph TD
 | Services | `internal/services/` | 2 ✅ | `internal/repository`, `internal/models`, `internal/auth`, `internal/discovery` |
 | API | `internal/api/` | 2 ✅ | `internal/services`, `internal/middleware` |
 | Web UI | `internal/api/web/` | 3 ✅ | `internal/services` (domain detail) |
+| Reports | `internal/api/reports.go` | 5 ✅ | `internal/services` |
 | Entrypoint | `cmd/certwatch/` | 1 ✅ | All internal packages, config loader |
+
+## Scanner design
+
+Scanners are registered in `main.go` and tried sequentially in priority order:
+
+1. **HTTPS** (5s timeout) — SNI-aware TLS handshake, most likely to succeed
+2. **CT** (10s timeout) — Certificate Transparency log query via crt.sh
+3. **SMTP / IMAP / POP3 / LDAP / FTP / TLS** (2s each) — protocol stubs
+
+First scanner to return a valid certificate wins. If all fail, an "error" cert with `protocol=unknown` is created.
 
 ## Conventions
 - `internal/` packages are never imported from outside the module
 - Each discovery protocol gets its own scanner type registered in the discovery registry
 - Configuration loaded once at startup via `internal/config/` and passed via DI
-- Database driver selected at build/runtime via environment variable (SQLite default, PostgreSQL planned)
 - Notification profiles loaded from YAML config, validated, and scheduled via cron
+- Reports combine domain + certificate data in-memory from existing repository methods
