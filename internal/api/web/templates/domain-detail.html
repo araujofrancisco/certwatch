@@ -1,0 +1,64 @@
+{{define "page"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+  <h1 class="h2">{{.Domain.Domain}}</h1>
+  <div>
+    <button class="btn btn-primary" onclick="scanDomain({{.Domain.ID}})">Scan Now</button>
+    <button class="btn btn-outline-warning" onclick="purgeDomainErrors({{.Domain.ID}})">Purge Errors</button>
+    <button class="btn btn-outline-danger" onclick="deleteDomain({{.Domain.ID}})">Delete</button>
+  </div>
+</div>
+<div class="row mb-4">
+  <div class="col-md-6">
+    <dl>
+      <dt>Domain</dt><dd>{{.Domain.Domain}}</dd>
+      <dt>Description</dt><dd>{{.Domain.Description}}</dd>
+      <dt>Enabled</dt><dd>{{if .Domain.Enabled}}Yes{{else}}No{{end}}</dd>
+      <dt>Added</dt><dd>{{.Domain.CreatedAt}}</dd>
+    </dl>
+  </div>
+</div>
+<h3>Certificate History</h3>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead><tr><th>Subject</th><th>Issuer</th><th>Not Before</th><th>Not After</th><th>Days</th><th>Status</th></tr></thead>
+    <tbody id="certsBody"></tbody>
+  </table>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+async function loadCertificates() {
+  const data = await apiFetch('/api/domains/{{.Domain.ID}}/certificates');
+  if (!data) return;
+  const tbody = document.getElementById('certsBody');
+  (data.certificates || []).forEach(c => {
+    const days = daysUntil(c.not_after);
+    tbody.innerHTML += `<tr>
+      <td>${escapeHtml(c.subject)}</td>
+      <td>${escapeHtml(c.issuer)}</td>
+      <td>${new Date(c.not_before).toLocaleDateString()}</td>
+      <td>${new Date(c.not_after).toLocaleDateString()}</td>
+      <td class="${statusClass(c.status)}">${days}</td>
+      <td><span class="${statusClass(c.status)}">${c.status}</span></td>
+    </tr>`;
+  });
+}
+async function scanDomain(id) {
+  await apiFetch('/api/domains/' + id + '/scan', {method: 'POST'});
+  location.reload();
+}
+async function deleteDomain(id) {
+  if (!confirm('Delete this domain?')) return;
+  await apiFetch('/api/domains/' + id, {method: 'DELETE'});
+  window.location.href = '/domains';
+}
+async function purgeDomainErrors(id) {
+  const data = await apiFetch('/api/domains/' + id + '/certificates/errors', {method: 'DELETE'});
+  if (data && data.deleted > 0) {
+    location.reload();
+  }
+}
+requireAuth();
+loadCertificates();
+</script>
+{{end}}

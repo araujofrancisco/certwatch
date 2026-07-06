@@ -1,0 +1,60 @@
+package services
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/araujofrancisco/certwatch/internal/auth"
+	"github.com/araujofrancisco/certwatch/internal/models"
+)
+
+type LoginResponse struct {
+	Token string       `json:"token"`
+	User  *models.User `json:"user"`
+}
+
+func (s *AuthService) Register(email, password, name string) (*models.User, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+	if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
+		return nil, fmt.Errorf("invalid email address")
+	}
+	if password == "" {
+		return nil, fmt.Errorf("password is required")
+	}
+
+	hashed, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+
+	user := &models.User{
+		Email:    email,
+		Password: hashed,
+		Name:     name,
+	}
+	if err := s.users.Create(user); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+func (s *AuthService) Login(email, password string) (*LoginResponse, error) {
+	user, err := s.users.FindByEmail(email)
+	if err != nil {
+		return nil, fmt.Errorf("invalid email or password")
+	}
+
+	if err := auth.CheckPassword(user.Password, password); err != nil {
+		return nil, fmt.Errorf("invalid email or password")
+	}
+
+	token, err := s.auth.GenerateToken(user.ID, user.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoginResponse{Token: token, User: user}, nil
+}

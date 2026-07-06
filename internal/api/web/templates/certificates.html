@@ -1,0 +1,109 @@
+{{define "page"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+  <h1 class="h2">Certificates</h1>
+  <div>
+    <button class="btn btn-outline-warning" onclick="purgeAllErrors()">Purge All Errors</button>
+  </div>
+</div>
+<div class="row mb-3 g-2">
+  <div class="col-md-3">
+    <input type="text" class="form-control" id="certSearch" placeholder="Search subject/issuer..." oninput="loadCertificates()">
+  </div>
+  <div class="col-md-2">
+    <select class="form-select" id="certStatus" onchange="loadCertificates()">
+      <option value="">All statuses</option>
+      <option value="valid">Valid</option>
+      <option value="expired">Expired</option>
+      <option value="error">Error</option>
+      <option value="expiring">Expiring</option>
+    </select>
+  </div>
+  <div class="col-md-2">
+    <select class="form-select" id="certProtocol" onchange="loadCertificates()">
+      <option value="">All protocols</option>
+      <option value="https">HTTPS</option>
+      <option value="ct">CT Log</option>
+      <option value="unknown">Unknown</option>
+    </select>
+  </div>
+  <div class="col-md-2">
+    <select class="form-select" id="certExpiring" onchange="loadCertificates()">
+      <option value="">Expiring...</option>
+      <option value="7">Within 7 days</option>
+      <option value="14">Within 14 days</option>
+      <option value="30">Within 30 days</option>
+      <option value="90">Within 90 days</option>
+    </select>
+  </div>
+  <div class="col-md-1">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="certExpired" onchange="loadCertificates()">
+      <label class="form-check-label" for="certExpired">Expired</label>
+    </div>
+  </div>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped" id="certsTable">
+    <thead><tr><th>Domain</th><th>Subject</th><th>Issuer</th><th>Expires</th><th>Days</th><th>Status</th></tr></thead>
+    <tbody id="certsBody"></tbody>
+  </table>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+let loadCertsId = 0;
+async function loadCertificates() {
+  const id = ++loadCertsId;
+  const q = document.getElementById('certSearch').value;
+  const status = document.getElementById('certStatus').value;
+  const protocol = document.getElementById('certProtocol').value;
+  const expiring = document.getElementById('certExpiring').value;
+  const expired = document.getElementById('certExpired').checked;
+
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (status) {
+    if (status === 'expiring') {
+      params.set('expiring', '30');
+    } else {
+      params.set('status', status);
+    }
+  }
+  if (protocol) params.set('protocol', protocol);
+  if (expiring) params.set('expiring', expiring);
+  if (expired) params.set('expired', 'true');
+
+  const certQuery = '/api/certificates?' + params.toString();
+  const [certsData, domainsData] = await Promise.all([
+    apiFetch(certQuery),
+    apiFetch('/api/domains')
+  ]);
+  if (!certsData || !domainsData || id !== loadCertsId) return;
+  const domainMap = {};
+  (domainsData.domains || []).forEach(d => domainMap[d.id] = d.domain);
+  const tbody = document.getElementById('certsBody');
+  if (id !== loadCertsId) return;
+  tbody.innerHTML = '';
+  (certsData.certificates || []).sort((a, b) => daysUntil(a.not_after) - daysUntil(b.not_after)).forEach(c => {
+    const days = daysUntil(c.not_after);
+    tbody.innerHTML += `<tr>
+      <td><a href="/domains/${c.domain_id}">${escapeHtml(domainMap[c.domain_id] || '?')}</a></td>
+      <td>${escapeHtml(c.subject)}</td>
+      <td>${escapeHtml(c.issuer)}</td>
+      <td>${new Date(c.not_after).toLocaleDateString()}</td>
+      <td class="${statusClass(c.status)}">${days}</td>
+      <td><span class="${statusClass(c.status)}">${c.status}</span></td>
+    </tr>`;
+  });
+}
+async function purgeAllErrors() {
+  const data = await apiFetch('/api/certificates/errors', {method: 'DELETE'});
+  if (data) {
+    alert('Deleted ' + data.deleted + ' error certificate(s)');
+    location.reload();
+  }
+}
+requireAuth();
+loadCertificates();
+</script>
+{{end}}

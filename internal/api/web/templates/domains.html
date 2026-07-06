@@ -1,0 +1,106 @@
+{{define "page"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+  <h1 class="h2">Domains</h1>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDomainModal">Add Domain</button>
+</div>
+<div class="row mb-3">
+  <div class="col-md-6">
+    <input type="text" class="form-control" id="domainSearch" placeholder="Search domains..." oninput="loadDomains()">
+  </div>
+  <div class="col-md-2">
+    <select class="form-select" id="domainEnabled" onchange="loadDomains()">
+      <option value="">All</option>
+      <option value="true">Enabled</option>
+      <option value="false">Disabled</option>
+    </select>
+  </div>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped" id="domainsTable">
+    <thead><tr><th>Domain</th><th>Description</th><th>Status</th><th>Latest Cert</th><th>Actions</th></tr></thead>
+    <tbody id="domainsBody"></tbody>
+  </table>
+</div>
+<div class="modal fade" id="addDomainModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Add Domain</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div id="addError" class="alert alert-danger d-none"></div>
+      <form id="addDomainForm">
+        <div class="mb-3"><label class="form-label">Domain</label><input type="text" class="form-control" id="newDomain" placeholder="example.com" required></div>
+        <div class="mb-3"><label class="form-label">Description</label><input type="text" class="form-control" id="newDescription" placeholder="My site"></div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button type="button" class="btn btn-primary" id="saveDomainBtn">Save</button>
+    </div>
+  </div></div>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+let loadDomainsId = 0;
+async function loadDomains() {
+  const id = ++loadDomainsId;
+  const q = document.getElementById('domainSearch').value;
+  const enabled = document.getElementById('domainEnabled').value;
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (enabled) params.set('enabled', enabled);
+  const data = await apiFetch('/api/domains?' + params.toString());
+  if (!data || id !== loadDomainsId) return;
+  const tbody = document.getElementById('domainsBody');
+  tbody.innerHTML = '';
+  (data.domains || []).forEach(d => {
+    tbody.innerHTML += `<tr>
+      <td><a href="/domains/${d.id}">${escapeHtml(d.domain)}</a></td>
+      <td>${escapeHtml(d.description)}</td>
+      <td>${d.enabled ? '<span class="status-valid">enabled</span>' : '<span class="status-error">disabled</span>'}</td>
+      <td id="cert-${d.id}">-</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary" onclick="scanDomain(${d.id})">Scan</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteDomain(${d.id})">Delete</button>
+      </td>
+    </tr>`;
+  });
+  (data.domains || []).forEach(async d => {
+    if (id !== loadDomainsId) return;
+    const certs = await apiFetch('/api/domains/' + d.id + '/certificates');
+    if (id !== loadDomainsId) return;
+    if (certs && certs.certificates && certs.certificates.length > 0) {
+      const latest = certs.certificates[certs.certificates.length - 1];
+      const el = document.getElementById('cert-' + d.id);
+      if (el) el.innerHTML = `<span class="${statusClass(latest.status)}">${daysUntil(latest.not_after)}d</span>`;
+    }
+  });
+}
+async function scanDomain(id) {
+  await apiFetch('/api/domains/' + id + '/scan', {method: 'POST'});
+  location.reload();
+}
+async function deleteDomain(id) {
+  if (!confirm('Delete this domain?')) return;
+  await apiFetch('/api/domains/' + id, {method: 'DELETE'});
+  location.reload();
+}
+document.getElementById('saveDomainBtn').addEventListener('click', async () => {
+  const domain = document.getElementById('newDomain').value;
+  const description = document.getElementById('newDescription').value;
+  const errEl = document.getElementById('addError');
+  errEl.classList.add('d-none');
+  const data = await apiFetch('/api/domains', {
+    method: 'POST',
+    body: JSON.stringify({domain, description})
+  });
+  if (!data || data.error) {
+    errEl.textContent = data ? data.error : 'Error adding domain';
+    errEl.classList.remove('d-none');
+    return;
+  }
+  location.reload();
+});
+requireAuth();
+loadDomains();
+</script>
+{{end}}

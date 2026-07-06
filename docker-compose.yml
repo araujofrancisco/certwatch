@@ -1,0 +1,22 @@
+services:
+  certwatch:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - certwatch-data:/data
+      - ./config:/config:ro
+    environment:
+      - CERTWATCH_CONFIG=/config/default.yaml
+      - CERTWATCH_DATABASE_DSN=/data/certwatch.db
+      - CERTWATCH_LOGGING_FORMAT=json
+    restart: unless-stopped
+    # user: "1000:1000"  # uncomment if using a non-root Dockerfile; ensure volume permissions match
+    healthcheck:
+      test: ["CMD", "/certwatch", "-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  certwatch-data:

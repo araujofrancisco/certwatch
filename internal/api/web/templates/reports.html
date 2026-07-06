@@ -1,0 +1,38 @@
+{{define "page"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+  <h1 class="h2">Reports</h1>
+</div>
+<div class="row">
+  <div class="col-md-6 mb-3">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Certificate Inventory</h5>
+        <p class="card-text">JSON snapshot of all domains and their latest certificates.</p>
+        <a href="/api/reports/inventory" class="btn btn-primary disabled">View JSON (Phase 5)</a>
+        <a href="#" class="btn btn-outline-secondary disabled">Download CSV (Phase 5)</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 mb-3">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Prometheus Metrics</h5>
+        <p class="card-text">Expose certificate metrics in Prometheus format for monitoring.</p>
+        <a href="#" class="btn btn-outline-secondary disabled">View Metrics (Phase 5)</a>
+      </div>
+    </div>
+  </div>
+</div>
+<h3 class="mt-4">Inventory</h3>
+<div class="table-responsive">
+  <table class="table table-striped" id="inventoryTable">
+    <thead><tr><th>Domain</th><th>Subject</th><th>Issuer</th><th>Expires</th><th>Days</th><th>Status</th></tr></thead>
+    <tbody id="inventoryBody"></tbody>
+  </table>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+requireAuth();
+</script>
+{{end}}

@@ -1,0 +1,13 @@
+certwatch
+build/
+*.db
+*.db-wal
+*.db-shm
+.env
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+vendor/

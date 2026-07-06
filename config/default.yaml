@@ -1,0 +1,52 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+database:
+  driver: sqlite
+  dsn: "certwatch.db"
+
+logging:
+  level: info
+  format: text
+
+auth:
+  secret: "change-me-in-production"
+  token_ttl: "24h"
+
+discovery:
+  scan_interval: "6h"
+  timeout: "30s"
+
+notifications:
+  smtp:
+    host: ""
+    port: 587
+    username: ""
+    password: ""
+    from: ""
+  profiles:
+    - name: Operations
+      enabled: true
+      type: immediate
+      recipients:
+        - ops@example.com
+      thresholds:
+        - 30
+        - 14
+        - 7
+        - 3
+        - 1
+    - name: Management
+      enabled: true
+      type: daily-digest
+      recipients:
+        - manager@example.com
+      send_at: "08:00"
+    - name: Security
+      enabled: true
+      type: weekly-digest
+      recipients:
+        - security@example.com
+      send_at: "09:00"
+      day: Monday
