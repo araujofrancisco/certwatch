@@ -15,11 +15,11 @@ func (h *Handler) RegisterDocsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/docs/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-yaml")
 		w.Header().Set("Cache-Control", "no-cache")
-		w.Write(openapiSpec)
+		_, _ = w.Write(openapiSpec)
 	})
 
 	mux.HandleFunc("GET /api/docs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(docsHTML))
+		_, _ = w.Write([]byte(docsHTML))
 	})
 }
