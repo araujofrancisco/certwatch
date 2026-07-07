@@ -133,6 +133,7 @@ type RateLimiter struct {
 	limit    int
 	window   time.Duration
 	stop     chan struct{}
+	closeOnce sync.Once
 }
 
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
@@ -147,7 +148,9 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 }
 
 func (rl *RateLimiter) Stop() {
-	close(rl.stop)
+	rl.closeOnce.Do(func() {
+		close(rl.stop)
+	})
 }
 
 func (rl *RateLimiter) cleanup() {

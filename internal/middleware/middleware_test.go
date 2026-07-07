@@ -86,6 +86,82 @@ func TestAuthMiddlewareMissingHeader(t *testing.T) {
 	}
 }
 
+func TestRateLimiter_Allow(t *testing.T) {
+	rl := NewRateLimiter(3, time.Minute)
+	defer rl.Stop()
+
+	if !rl.Allow("test-ip") {
+		t.Error("expected first request allowed")
+	}
+	if !rl.Allow("test-ip") {
+		t.Error("expected second request allowed")
+	}
+	if !rl.Allow("test-ip") {
+		t.Error("expected third request allowed")
+	}
+	if rl.Allow("test-ip") {
+		t.Error("expected fourth request blocked")
+	}
+	// Different IP should be allowed
+	if !rl.Allow("other-ip") {
+		t.Error("expected different IP allowed")
+	}
+}
+
+func TestRateLimiter_Stop(t *testing.T) {
+	rl := NewRateLimiter(10, time.Minute)
+	rl.Stop()
+	// Should not panic on subsequent calls
+	rl.Stop()
+}
+
+func TestRateLimiter_Expires(t *testing.T) {
+	// Use a very short window so the entry expires
+	rl := NewRateLimiter(1, 50*time.Millisecond)
+	defer rl.Stop()
+
+	if !rl.Allow("test") {
+		t.Error("expected allowed")
+	}
+	if rl.Allow("test") {
+		t.Error("expected blocked within window")
+	}
+	time.Sleep(60 * time.Millisecond)
+	if !rl.Allow("test") {
+		t.Error("expected allowed after expiry")
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	tests := []struct {
+		name     string
+		headers  map[string]string
+		remote   string
+		expected string
+	}{
+		{"x-forwarded-for", map[string]string{"X-Forwarded-For": "1.2.3.4"}, "5.6.7.8:1234", "1.2.3.4"},
+		{"x-forwarded-for-multi", map[string]string{"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, "9.9.9.9:99", "1.2.3.4"},
+		{"x-real-ip", map[string]string{"X-Real-IP": "4.3.2.1"}, "5.6.7.8:1234", "4.3.2.1"},
+		{"remote-addr-no-port", nil, "1.2.3.4", "1.2.3.4"},
+		{"remote-addr-with-port", nil, "1.2.3.4:8080", "1.2.3.4"},
+		{"x-forwarded-for-wins", map[string]string{"X-Forwarded-For": "1.1.1.1", "X-Real-IP": "2.2.2.2"}, "3.3.3.3:80", "1.1.1.1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = tt.remote
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+			ip := clientIP(req)
+			if ip != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, ip)
+			}
+		})
+	}
+}
+
 func TestAuthMiddlewareInvalidToken(t *testing.T) {
 	authenticator := auth.New("test-secret", time.Hour)
 	mw := Auth(authenticator)
