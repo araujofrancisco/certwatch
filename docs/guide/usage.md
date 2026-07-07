@@ -109,6 +109,8 @@ Environment variables take precedence over the config file.
 
 ## REST API
 
+Interactive OpenAPI 3.0 documentation is available at `/api/docs` (Scalar UI, loaded from CDN). The raw spec is at `/api/docs/openapi.yaml`.
+
 All API endpoints (except `/health` and auth endpoints) require a `Bearer` token in the `Authorization` header.
 
 Auth endpoints are rate-limited to **10 requests per minute per IP** (sliding window). All request bodies are limited to **1 MB**.
@@ -239,6 +241,18 @@ curl -X DELETE http://localhost:8080/api/domains/1/certificates/errors \
 curl http://localhost:8080/api/reports/inventory \
   -H "Authorization: Bearer <token>"
 ```
+
+## API Documentation
+
+```bash
+# Interactive Scalar UI (requires browser)
+open http://localhost:8080/api/docs
+
+# Raw OpenAPI 3.0 spec
+curl http://localhost:8080/api/docs/openapi.yaml
+```
+
+The OpenAPI spec at `internal/api/openapi.yaml` covers all 15 REST endpoints with 26 schemas, request/response examples, and authentication flow. The Scalar UI lets you explore endpoints interactively and try them with live requests.
 
 ## Web UI
 

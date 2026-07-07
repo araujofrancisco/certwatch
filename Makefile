@@ -1,5 +1,5 @@
 BIN       := certwatch
-MODULE    := github.com/certwatch/certwatch
+MODULE    := github.com/araujofrancisco/certwatch
 GO        := go
 GOFLAGS   := -ldflags="-s -w"
 BUILDDIR  := build
@@ -21,8 +21,8 @@ test:
 LINT_VERSION := v1.64.8
 
 lint:
-	@which golangci-lint >/dev/null 2>&1 || (echo "installing golangci-lint"; go install github.com/golangci-lint/golangci-lint/cmd/golangci-lint@$(LINT_VERSION))
-	golangci-lint run ./...
+	@which golangci-lint >/dev/null 2>&1 || (echo "installing golangci-lint"; go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(LINT_VERSION))
+	$$(go env GOPATH)/bin/golangci-lint run ./...
 
 tidy:
 	$(GO) mod tidy
