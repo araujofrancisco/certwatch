@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -111,12 +112,6 @@ func run() error {
 
 	scannerReg := discovery.NewRegistry()
 	scannerReg.Register(discovery.NewHTTPSScanner(scanTimeout))
-	scannerReg.Register(discovery.NewSMTPScanner(scanTimeout))
-	scannerReg.Register(discovery.NewIMAPScanner(scanTimeout))
-	scannerReg.Register(discovery.NewPOP3Scanner(scanTimeout))
-	scannerReg.Register(discovery.NewLDAPScanner(scanTimeout))
-	scannerReg.Register(discovery.NewFTPScanner(scanTimeout))
-	scannerReg.Register(discovery.NewTLSScanner(scanTimeout))
 	scannerReg.Register(discovery.NewCTScanner(scanTimeout))
 
 	userRepo := repository.NewUserRepository(db)
@@ -195,8 +190,59 @@ func runBackgroundScan(ctx context.Context, svc *services.DomainService, timeout
 	}
 }
 
+type notifiedSet struct {
+	mu    sync.Mutex
+	m     map[string]time.Time
+	ttl   time.Duration
+}
+
+func newNotifiedSet(ttl time.Duration) *notifiedSet {
+	return &notifiedSet{m: make(map[string]time.Time), ttl: ttl}
+}
+
+func (ns *notifiedSet) Contains(key string) bool {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	if t, ok := ns.m[key]; ok {
+		if time.Since(t) < ns.ttl {
+			return true
+		}
+		delete(ns.m, key)
+	}
+	return false
+}
+
+func (ns *notifiedSet) Add(key string) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.m[key] = time.Now()
+}
+
+func (ns *notifiedSet) Cleanup() {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	now := time.Now()
+	for k, t := range ns.m {
+		if now.Sub(t) >= ns.ttl {
+			delete(ns.m, k)
+		}
+	}
+}
+
 func runNotifications(ctx context.Context, cfg config.Config, domainSvc *services.DomainService, certSvc *services.CertificateService) {
-	notified := make(map[string]bool) // key: "certID:threshold" — dedup across minutes
+	notified := newNotifiedSet(24 * time.Hour) // dedup across minutes, auto-cleanup after 24h
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				notified.Cleanup()
+			}
+		}
+	}()
 
 	if err := notifier.ValidateProfiles(cfg.Notifications.Profiles); err != nil {
 		slog.Error("invalid notification profiles", "error", err)
@@ -252,7 +298,7 @@ func runNotifications(ctx context.Context, cfg config.Config, domainSvc *service
 	sched.Start(ctx)
 }
 
-func checkImmediateNotifications(ctx context.Context, domainSvc *services.DomainService, certSvc *services.CertificateService, notifierN *notifier.Notifier, matcher *notifier.Matcher, profile config.ProfileConfig, notified map[string]bool) {
+func checkImmediateNotifications(ctx context.Context, domainSvc *services.DomainService, certSvc *services.CertificateService, notifierN *notifier.Notifier, matcher *notifier.Matcher, profile config.ProfileConfig, notified *notifiedSet) {
 	certs, err := certSvc.ListCertificates()
 	if err != nil {
 		slog.Error("immediate check: list certificates", "error", err)
@@ -275,10 +321,10 @@ func checkImmediateNotifications(ctx context.Context, domainSvc *services.Domain
 		}
 		for _, c := range m.Certificates {
 			key := fmt.Sprintf("%d:%d", c.ID, m.Threshold)
-			if notified[key] {
+			if notified.Contains(key) {
 				continue
 			}
-			notified[key] = true
+			notified.Add(key)
 
 			domain, err := domainSvc.GetDomain(c.DomainID)
 			if err != nil {
@@ -336,5 +382,5 @@ func sendDigest(ctx context.Context, domainSvc *services.DomainService, certSvc 
 }
 
 func version() string {
-	return "0.1.0"
+	return api.Version
 }

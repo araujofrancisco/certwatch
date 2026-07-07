@@ -62,23 +62,25 @@ func (h *Handler) inventoryReport(w http.ResponseWriter, r *http.Request) {
 		if c, ok := certsByDomain[d.ID]; ok {
 			entry.LatestCert = c
 			stats.WithCerts++
-			days := int(c.NotAfter.Sub(now).Hours() / 24)
 
 			switch {
 			case c.Status == "error":
 				stats.Errors++
-			case days <= 0:
+			case c.NotAfter.IsZero():
+				stats.Valid++
+			case c.NotAfter.Before(now):
 				stats.Expired++
-			case days <= 14:
+			case c.NotAfter.Before(now.AddDate(0, 0, 14)):
 				stats.Expiring++
 			default:
 				stats.Valid++
 			}
 
 			if !c.NotAfter.IsZero() {
-				entry.DaysRemaining = days
-				if entry.DaysRemaining < 0 {
+				if c.NotAfter.Before(now) {
 					entry.DaysRemaining = 0
+				} else {
+					entry.DaysRemaining = int(c.NotAfter.Sub(now).Hours()/24)
 				}
 			}
 		}

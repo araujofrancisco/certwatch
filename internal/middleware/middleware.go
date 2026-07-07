@@ -132,6 +132,8 @@ type RateLimiter struct {
 	entries  map[string][]time.Time
 	limit    int
 	window   time.Duration
+	stop     chan struct{}
+	closeOnce sync.Once
 }
 
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
@@ -139,30 +141,43 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 		entries: make(map[string][]time.Time),
 		limit:   limit,
 		window:  window,
+		stop:    make(chan struct{}),
 	}
 	go rl.cleanup()
 	return rl
 }
 
+func (rl *RateLimiter) Stop() {
+	rl.closeOnce.Do(func() {
+		close(rl.stop)
+	})
+}
+
 func (rl *RateLimiter) cleanup() {
+	ticker := time.NewTicker(rl.window)
+	defer ticker.Stop()
 	for {
-		time.Sleep(rl.window)
-		rl.mu.Lock()
-		now := time.Now()
-		for key, times := range rl.entries {
-			var kept []time.Time
-			for _, t := range times {
-				if now.Sub(t) < rl.window {
-					kept = append(kept, t)
+		select {
+		case <-rl.stop:
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			now := time.Now()
+			for key, times := range rl.entries {
+				var kept []time.Time
+				for _, t := range times {
+					if now.Sub(t) < rl.window {
+						kept = append(kept, t)
+					}
+				}
+				if len(kept) == 0 {
+					delete(rl.entries, key)
+				} else {
+					rl.entries[key] = kept
 				}
 			}
-			if len(kept) == 0 {
-				delete(rl.entries, key)
-			} else {
-				rl.entries[key] = kept
-			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
@@ -185,13 +200,25 @@ func (rl *RateLimiter) Allow(key string) bool {
 	return true
 }
 
+func clientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		parts := strings.Split(fwd, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if real := r.Header.Get("X-Real-IP"); real != "" {
+		return strings.TrimSpace(real)
+	}
+	ip := r.RemoteAddr
+	if addr := strings.LastIndex(ip, ":"); addr != -1 {
+		ip = ip[:addr]
+	}
+	return ip
+}
+
 func RateLimit(rl *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := r.RemoteAddr
-			if addr := strings.LastIndex(ip, ":"); addr != -1 {
-				ip = ip[:addr]
-			}
+			ip := clientIP(r)
 			if !rl.Allow(ip) {
 				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
 				return

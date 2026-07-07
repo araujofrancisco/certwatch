@@ -21,12 +21,10 @@ type DailySection struct {
 }
 
 type WeeklyReport struct {
-	TotalDomains    int
-	Healthy         int
-	Warning         int
-	Expired         int
-	Renewed         int
-	NewCertificates int
+	TotalDomains int
+	Healthy      int
+	Warning      int
+	Expired      int
 }
 
 func ImmediateAlert(c CertInfo) (subject, body string) {
@@ -92,12 +90,6 @@ Warning
 %d
 
 Expired
-%d
-
-Certificates Renewed
-%d
-
-New Certificates Found
-%d`, report.TotalDomains, report.Healthy, report.Warning, report.Expired, report.Renewed, report.NewCertificates)
+%d`, report.TotalDomains, report.Healthy, report.Warning, report.Expired)
 	return subject, body
 }

@@ -3,8 +3,10 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/araujofrancisco/certwatch/internal/discovery"
@@ -54,17 +56,31 @@ func (s *DomainService) GetDomain(id int64) (*models.Domain, error) {
 	return d, nil
 }
 
+func (s *DomainService) attachTags(domains []*models.Domain) {
+	if len(domains) == 0 {
+		return
+	}
+	ids := make([]int64, len(domains))
+	for i, d := range domains {
+		ids[i] = d.ID
+	}
+	tagMap, err := s.tags.GetTagsByDomainIDs(ids)
+	if err != nil {
+		return
+	}
+	for _, d := range domains {
+		if ptags, ok := tagMap[d.ID]; ok {
+			d.Tags = derefTags(ptags)
+		}
+	}
+}
+
 func (s *DomainService) ListDomains() ([]*models.Domain, error) {
 	domains, err := s.domains.List()
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range domains {
-		ptags, err := s.tags.GetDomainTags(d.ID)
-		if err == nil {
-			d.Tags = derefTags(ptags)
-		}
-	}
+	s.attachTags(domains)
 	return domains, nil
 }
 
@@ -73,12 +89,7 @@ func (s *DomainService) ListDomainsFiltered(f models.DomainFilter) ([]*models.Do
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range domains {
-		ptags, err := s.tags.GetDomainTags(d.ID)
-		if err == nil {
-			d.Tags = derefTags(ptags)
-		}
-	}
+	s.attachTags(domains)
 	return domains, nil
 }
 
@@ -100,25 +111,22 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 		return nil, err
 	}
 
-	priorityOrder := []string{"https", "ct", "smtp", "imap", "pop3", "ldap", "ftp", "tls"}
-	scannerTimeouts := map[string]time.Duration{
-		"https": 5 * time.Second,
-		"ct":    10 * time.Second,
+	priorityOrder := []struct {
+		protocol string
+		timeout  time.Duration
+	}{
+		{"https", 5 * time.Second},
+		{"ct", 10 * time.Second},
 	}
 
 	var lastErr error
-	for _, protocol := range priorityOrder {
-		scanner := s.scanners.ForProtocol(protocol)
+	for _, p := range priorityOrder {
+		scanner := s.scanners.ForProtocol(p.protocol)
 		if scanner == nil {
 			continue
 		}
 
-		perTimeout := scannerTimeouts[protocol]
-		if perTimeout == 0 {
-			perTimeout = 2 * time.Second
-		}
-
-		scanCtx, cancel := context.WithTimeout(ctx, perTimeout)
+		scanCtx, cancel := context.WithTimeout(ctx, p.timeout)
 		result, err := scanner.Scan(scanCtx, d.Domain)
 		cancel()
 		if err != nil {
@@ -134,7 +142,9 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 		Status:      "error",
 		LastChecked: time.Now(),
 	}
-	_ = s.certs.Create(cert)
+	if err := s.certs.Create(cert); err != nil {
+		slog.Error("failed to save error cert", "domain_id", d.ID, "error", err)
+	}
 	return cert, fmt.Errorf("all scanners failed: %w", lastErr)
 }
 
@@ -240,7 +250,9 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 		}
 	}
 
-	_ = s.certs.Create(cert)
+	if err := s.certs.Create(cert); err != nil {
+		slog.Error("failed to save certificate", "domain_id", domainID, "error", err)
+	}
 	return cert
 }
 
@@ -255,7 +267,9 @@ func (s *DomainService) updateCert(existing *models.Certificate, result *discove
 		existing.Fingerprint = result.Fingerprint
 	}
 	existing.Protocol = result.Protocol
-	_ = s.certs.Update(existing)
+	if err := s.certs.Update(existing); err != nil {
+		slog.Error("failed to update certificate", "cert_id", existing.ID, "error", err)
+	}
 	return existing
 }
 
@@ -334,16 +348,20 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 		}
 
 		if len(p.Tags) > 0 {
-			_ = s.SetDomainTags(d.ID, p.Tags)
+			if err := s.SetDomainTags(d.ID, p.Tags); err != nil {
+				slog.Error("failed to set tags on bulk import", "domain_id", d.ID, "error", err)
+			}
 		}
 
 		res.Status = "created"
 
-		go func(id int64, name string) {
+		go func(id int64) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			_, _ = s.ScanDomain(ctx, id, 30*time.Second)
-		}(d.ID, d.Domain)
+			if _, err := s.ScanDomain(ctx, id, 30*time.Second); err != nil {
+				slog.Error("bulk import background scan failed", "domain_id", id, "error", err)
+			}
+		}(d.ID)
 
 		summary.Created++
 		results = append(results, res)
@@ -358,13 +376,35 @@ func (s *DomainService) ScanAllDomains(ctx context.Context, timeout time.Duratio
 	if err != nil {
 		return nil, err
 	}
-	var certs []*models.Certificate
+	type result struct {
+		cert *models.Certificate
+	}
+	results := make(chan result, len(domains))
+	sem := make(chan struct{}, 10)
+
+	var wg sync.WaitGroup
 	for _, d := range domains {
-		cert, err := s.ScanDomain(ctx, d.ID, timeout)
-		if err != nil {
-			continue
-		}
-		certs = append(certs, cert)
+		wg.Add(1)
+		go func(id int64) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			cert, err := s.ScanDomain(ctx, id, timeout)
+			if err != nil {
+				return
+			}
+			results <- result{cert: cert}
+		}(d.ID)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var certs []*models.Certificate
+	for r := range results {
+		certs = append(certs, r.cert)
 	}
 	return certs, nil
 }

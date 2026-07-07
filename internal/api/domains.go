@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -62,16 +63,23 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(req.Tags) > 0 {
-		_ = h.domains.SetDomainTags(domain.ID, req.Tags)
+		if err := h.domains.SetDomainTags(domain.ID, req.Tags); err != nil {
+			slog.Error("failed to set domain tags", "domain_id", domain.ID, "error", err)
+		}
 	}
 
-	domain, _ = h.domains.GetDomain(domain.ID)
+	domain, err = h.domains.GetDomain(domain.ID)
+	if err != nil {
+		slog.Error("failed to re-fetch domain", "domain_id", domain.ID, "error", err)
+	}
 
-	go func() {
+	go func(id int64) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		_, _ = h.domains.ScanDomain(ctx, domain.ID, 30*time.Second)
-	}()
+		if _, err := h.domains.ScanDomain(ctx, id, 30*time.Second); err != nil {
+			slog.Error("background scan failed", "domain_id", id, "error", err)
+		}
+	}(domain.ID)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"domain": domain})
 }

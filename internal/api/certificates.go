@@ -79,7 +79,7 @@ func (h *Handler) listDomainCertificates(w http.ResponseWriter, r *http.Request)
 
 	certs, err := h.certs.ListCertificatesFiltered(f)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "domain not found")
+		writeError(w, http.StatusInternalServerError, "failed to list certificates")
 		return
 	}
 

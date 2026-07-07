@@ -4,9 +4,11 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/araujofrancisco/certwatch/internal/models"
 )
@@ -28,31 +30,52 @@ type pageTmpl struct {
 	layout string
 }
 
-var pageTemplates map[string]*pageTmpl
+var (
+	pageTemplates map[string]*pageTmpl
+	loadTemplates sync.Once
+)
 
-func init() {
-	pageTemplates = make(map[string]*pageTmpl)
-
-	for _, p := range []string{"dashboard", "domains", "domain-detail", "certificates", "reports", "import"} {
-		tmpl := template.Must(template.ParseFS(templateFS,
-			"web/templates/layout.html",
-			"web/templates/"+p+".html",
-		))
-		pageTemplates[p] = &pageTmpl{tmpl: tmpl, layout: "layout.html"}
-	}
-
-	for _, p := range []string{"login", "register"} {
-		tmpl := template.Must(template.ParseFS(templateFS,
-			"web/templates/auth-layout.html",
-			"web/templates/"+p+".html",
-		))
-		pageTemplates[p] = &pageTmpl{tmpl: tmpl, layout: "auth-layout.html"}
-	}
+func ensureTemplates() error {
+	var err error
+	loadTemplates.Do(func() {
+		pageTemplates = make(map[string]*pageTmpl)
+		for _, p := range []string{"dashboard", "domains", "domain-detail", "certificates", "reports", "import"} {
+			t, e := template.ParseFS(templateFS,
+				"web/templates/layout.html",
+				"web/templates/"+p+".html",
+			)
+			if e != nil {
+				err = e
+				return
+			}
+			pageTemplates[p] = &pageTmpl{tmpl: t, layout: "layout.html"}
+		}
+		for _, p := range []string{"login", "register"} {
+			t, e := template.ParseFS(templateFS,
+				"web/templates/auth-layout.html",
+				"web/templates/"+p+".html",
+			)
+			if e != nil {
+				err = e
+				return
+			}
+			pageTemplates[p] = &pageTmpl{tmpl: t, layout: "auth-layout.html"}
+		}
+	})
+	return err
 }
 
 func (h *Handler) RegisterUIRoutes(mux *http.ServeMux) {
+	if err := ensureTemplates(); err != nil {
+		slog.Error("failed to load templates", "error", err)
+	}
+
 	staticSub, _ := fs.Sub(staticFS, "web/static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dashboard", http.StatusFound)
+	})
 
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "login", pageData{Title: "Login"})
@@ -111,6 +134,7 @@ func renderPage(w http.ResponseWriter, name string, data pageData) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := pt.tmpl.ExecuteTemplate(w, pt.layout, data); err != nil {
+		slog.Error("template execution failed", "page", name, "error", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 	}
 }

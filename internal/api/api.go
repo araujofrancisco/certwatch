@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/araujofrancisco/certwatch/internal/auth"
@@ -10,12 +11,14 @@ import (
 	"github.com/araujofrancisco/certwatch/internal/services"
 )
 
+const Version = "0.1.0"
+
 type Handler struct {
-	domains    *services.DomainService
-	certs      *services.CertificateService
-	authSvc    *services.AuthService
-	authN      *auth.Authenticator
-	db         *sql.DB
+	domains     *services.DomainService
+	certs       *services.CertificateService
+	authSvc     *services.AuthService
+	authN       *auth.Authenticator
+	db          *sql.DB
 	rateLimiter *middleware.RateLimiter
 }
 
@@ -28,6 +31,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	rateLimit := middleware.RateLimit(h.rateLimiter)
 
 	mux.HandleFunc("GET /health", h.health)
+	mux.HandleFunc("GET /api/version", h.version)
 
 	mux.Handle("POST /api/auth/register", rateLimit(http.HandlerFunc(h.register)))
 	mux.Handle("POST /api/auth/login", rateLimit(http.HandlerFunc(h.login)))
@@ -51,6 +55,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.RegisterDocsRoutes(mux)
 }
 
+func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": Version})
+}
+
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	if h.db != nil {
 		if err := h.db.Ping(); err != nil {
@@ -69,7 +77,9 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("failed to write JSON response", "error", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

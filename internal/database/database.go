@@ -28,6 +28,18 @@ func Open(driver, dsn string) (*DB, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
+	if driver == "sqlite" {
+		pragmas := []string{
+			"PRAGMA journal_mode=WAL",
+			"PRAGMA busy_timeout=5000",
+		}
+		for _, p := range pragmas {
+			if _, err := db.Exec(p); err != nil {
+				return nil, fmt.Errorf("%s: %w", p, err)
+			}
+		}
+	}
+
 	slog.Info("database connected", "driver", driver)
 
 	return &DB{DB: db, driver: driver, dsn: dsn}, nil
