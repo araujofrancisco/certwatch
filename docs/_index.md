@@ -13,5 +13,5 @@ Status: **Phases 1–9 implemented** (Go backend, REST API, JWT auth, SQLite, HT
 | [guide/usage.md](guide/usage.md) | ✅ Updated | Full config ref, API filters, reports endpoint, bulk import |
 | [guide/deployment.md](guide/deployment.md) | ✅ Updated | Docker, compose, production deployment, backup/restore |
 | [guide/troubleshooting.md](guide/troubleshooting.md) | ✅ Updated | Common issues, fixes |
-| [openapi.yaml](openapi.yaml) | ✅ Complete | OpenAPI 3.0 spec for all 15 REST endpoints |
+| [openapi.yaml](../internal/api/openapi.yaml) | ✅ Complete | OpenAPI 3.0 spec for all 15 REST endpoints |
 | [audit-report.md](audit-report.md) | ✅ Complete | Security audit, 28/28 fixes applied |

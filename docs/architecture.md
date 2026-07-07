@@ -20,7 +20,7 @@ graph TD
         U --> T[templates/ + static/]
         internal/api/ --> R[internal/api/reports.go 🔹 Phase 5]
         internal/api/ --> D[internal/api/docs.go 🔹 Phase 9]
-        D --> O[docs/openapi.yaml]
+        D --> O[openapi.yaml 🔹 internal/api/]
         internal/services/ --> I[internal/services/domains.go 🔹 Phase 7 bulk+groups+tags+update]
         internal/services/ --> internal/notifier/ --> internal/scheduler/
         internal/services/ --> internal/templates/

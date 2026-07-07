@@ -48,7 +48,7 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tab
 - **Scheduler**: not cron-daemon — polls every 30s via `time.NewTicker`
 - **Notification dedup**: in-memory map `${certID}:${threshold}` (lost on restart)
 - **Web UI**: Go embed (`//go:embed`), no build step. 10 HTML templates at `internal/api/web/templates/`, static at `internal/api/web/static/`. Templates use `{{define "page"}}` to avoid name collisions.
-- **API docs**: OpenAPI 3.0 spec at `docs/openapi.yaml`. Served interactively via Scalar UI at `GET /api/docs` (loaded from CDN, ~1 KB embed). Raw YAML at `GET /api/docs/openapi.yaml`.
+- **API docs**: OpenAPI 3.0 spec at `internal/api/openapi.yaml`. Served interactively via Scalar UI at `GET /api/docs` (loaded from CDN, ~1 KB embed). Raw YAML at `GET /api/docs/openapi.yaml`.
 - **Server-side filtering**: `GET /api/domains` and `GET /api/certificates` accept query params (`q`, `status`, `protocol`, `domain_id`, `expiring`, `expired`, `enabled`). Dynamic SQL with `LIKE` and parameterized queries.
 - **Groups**: `group_name` column on domains table. Optional text field on create/update. Filters not yet server-side.
 - **Tags**: M:N via `tags` + `domain_tags` tables with CASCADE deletes. Set on create/update/import. Random color assignment on creation.

@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed ../../docs/openapi.yaml
+//go:embed openapi.yaml
 var openapiSpec []byte
 
 //go:embed web/templates/docs.html
