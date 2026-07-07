@@ -7,7 +7,9 @@ CertWatch discovers certificates across multiple protocols, tracks expiry dates,
 ## Features
 
 - **REST API** — manage domains, certificates, and auth programmatically
+- **OpenAPI 3.0 docs** — interactive API docs served at `/api/docs` via Scalar UI
 - **Bulk import** — add many domains at once via API or web UI (objects or plain strings)
+- **Groups & Tags** — organize domains with optional groups and M:N tag relationships
 - **Certificate discovery** — HTTPS (SNI-aware) + Certificate Transparency (crt.sh) + 6 protocol stubs
 - **Server-side filtering** — domains and certificates list endpoints support multi-criteria query params
 - **Expiration monitoring** — track expiry across all discovered certificates
@@ -25,7 +27,7 @@ CertWatch discovers certificates across multiple protocols, tracks expiry dates,
 ## Quick start
 
 ```bash
-make test       # 84 tests, all pass
+make test       # 84+ tests, all pass
 make build      # static binary → build/certwatch
 make run        # start on :8080
 ```
@@ -65,14 +67,14 @@ discovery:
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
 | 1 — Foundation | ✅ Complete | Go scaffold, Docker, SQLite, config, logging, CI |
-| 2 — Backend | ✅ Complete | REST API, JWT auth, CRUD, scanners, 84 tests |
-| 3 — Web UI | ✅ Complete | Bootstrap 5 dashboard, 7 pages, embed served |
+| 2 — Backend | ✅ Complete | REST API, JWT auth, CRUD, scanners, 84+ tests |
+| 3 — Web UI | ✅ Complete | Bootstrap 5 dashboard, 7 pages, Go embed |
 | 4 — Notification | ✅ Complete | SMTP alerts, daily/weekly digests, cron scheduler |
 | 5 — Reports | ✅ Complete | Inventory API + UI with summary cards, filters, export |
 | 6 — Backup | ✅ Complete | Backup/restore scripts, 30-day retention, Docker & standalone |
-| 7 — Bulk import | ✅ Complete | Multi-domain import via API + web UI |
-| 8 — API docs | ⬜ | OpenAPI/Swagger |
-| 9 — Testing | ⬜ | Integration, Docker tests |
+| 7 — Groups & Tags | ✅ Complete | Domain groups, M:N tags with random colors, domain update |
+| 8 — OpenAPI Docs | ✅ Complete | Interactive Scalar UI at `/api/docs`, raw YAML at `/api/docs/openapi.yaml` |
+| 9 — Security Audit | ✅ Complete | 28/28 issues fixed (full report in `docs/audit-report.md`) |
 
 ## Architecture
 
@@ -99,6 +101,7 @@ cmd/certwatch/ → internal/api/ → internal/services/ → internal/repository/
 | `POST` | `/api/domains` | Yes | Add domain (auto-scans in background) |
 | `POST` | `/api/domains/import` | Yes | Bulk import domains (objects or plain strings) |
 | `GET` | `/api/domains/{id}` | Yes | Get domain |
+| `PUT` | `/api/domains/{id}` | Yes | Update domain (name, desc, group, enabled, tags) |
 | `DELETE` | `/api/domains/{id}` | Yes | Delete domain + cascade certs |
 | `POST` | `/api/domains/{id}/scan` | Yes | Scan domain |
 | `GET` | `/api/certificates` | Yes | List certs (`?q=&status=&protocol=&domain_id=&expiring=&expired=`) |
@@ -106,6 +109,8 @@ cmd/certwatch/ → internal/api/ → internal/services/ → internal/repository/
 | `DELETE` | `/api/certificates/errors` | Yes | Purge all error certs |
 | `DELETE` | `/api/domains/{id}/certificates/errors` | Yes | Purge error certs for domain |
 | `GET` | `/api/reports/inventory` | Yes | Inventory report with summary stats |
+| `GET` | `/api/docs` | No | Interactive API docs (Scalar UI) |
+| `GET` | `/api/docs/openapi.yaml` | No | Raw OpenAPI 3.0 spec |
 
 RL = rate-limited (10 req/min per IP)
 
@@ -128,7 +133,7 @@ RL = rate-limited (10 req/min per IP)
 - [Deployment guide](docs/guide/deployment.md) — Docker, production setup
 - [Troubleshooting](docs/guide/troubleshooting.md) — common issues and fixes
 - [Architecture](docs/architecture.md) — layer diagram and conventions
-- [Audit report](docs/audit-report.md) — security review, 24/25 issues fixed
+- [Audit report](docs/audit-report.md) — security review, 28/28 issues fixed
 
 ## Stack
 

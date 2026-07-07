@@ -1,5 +1,5 @@
 BIN       := certwatch
-MODULE    := github.com/certwatch/certwatch
+MODULE    := github.com/araujofrancisco/certwatch
 GO        := go
 GOFLAGS   := -ldflags="-s -w"
 BUILDDIR  := build
