@@ -133,6 +133,43 @@ func (r *tagRepo) ListByTagNames(names []string) ([]int64, error) {
 	return ids, rows.Err()
 }
 
+func (r *tagRepo) GetTagsByDomainIDs(domainIDs []int64) (map[int64][]*models.Tag, error) {
+	if len(domainIDs) == 0 {
+		return make(map[int64][]*models.Tag), nil
+	}
+	placeholders := make([]string, len(domainIDs))
+	args := make([]any, len(domainIDs))
+	for i, id := range domainIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := r.db.Query(`
+		SELECT dt.domain_id, t.id, t.name, t.color, t.created_at
+		FROM domain_tags dt
+		JOIN tags t ON t.id = dt.tag_id
+		WHERE dt.domain_id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY dt.domain_id, t.name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get tags by domain ids: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]*models.Tag)
+	for rows.Next() {
+		var domainID int64
+		var tag models.Tag
+		var createdAt sql.NullTime
+		if err := rows.Scan(&domainID, &tag.ID, &tag.Name, &tag.Color, &createdAt); err != nil {
+			return nil, err
+		}
+		if createdAt.Valid {
+			tag.CreatedAt = createdAt.Time
+		}
+		result[domainID] = append(result[domainID], &tag)
+	}
+	return result, rows.Err()
+}
+
 func scanTag(s scanner) (*models.Tag, error) {
 	var t models.Tag
 	var createdAt sql.NullTime

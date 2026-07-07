@@ -54,6 +54,7 @@ type TagRepository interface {
 	Delete(id int64) error
 	SetDomainTags(domainID int64, tagIDs []int64) error
 	GetDomainTags(domainID int64) ([]*models.Tag, error)
+	GetTagsByDomainIDs(domainIDs []int64) (map[int64][]*models.Tag, error)
 	ListByTagNames(names []string) ([]int64, error)
 }
 

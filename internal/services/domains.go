@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/araujofrancisco/certwatch/internal/discovery"
@@ -55,17 +56,31 @@ func (s *DomainService) GetDomain(id int64) (*models.Domain, error) {
 	return d, nil
 }
 
+func (s *DomainService) attachTags(domains []*models.Domain) {
+	if len(domains) == 0 {
+		return
+	}
+	ids := make([]int64, len(domains))
+	for i, d := range domains {
+		ids[i] = d.ID
+	}
+	tagMap, err := s.tags.GetTagsByDomainIDs(ids)
+	if err != nil {
+		return
+	}
+	for _, d := range domains {
+		if ptags, ok := tagMap[d.ID]; ok {
+			d.Tags = derefTags(ptags)
+		}
+	}
+}
+
 func (s *DomainService) ListDomains() ([]*models.Domain, error) {
 	domains, err := s.domains.List()
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range domains {
-		ptags, err := s.tags.GetDomainTags(d.ID)
-		if err == nil {
-			d.Tags = derefTags(ptags)
-		}
-	}
+	s.attachTags(domains)
 	return domains, nil
 }
 
@@ -74,12 +89,7 @@ func (s *DomainService) ListDomainsFiltered(f models.DomainFilter) ([]*models.Do
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range domains {
-		ptags, err := s.tags.GetDomainTags(d.ID)
-		if err == nil {
-			d.Tags = derefTags(ptags)
-		}
-	}
+	s.attachTags(domains)
 	return domains, nil
 }
 
@@ -366,13 +376,35 @@ func (s *DomainService) ScanAllDomains(ctx context.Context, timeout time.Duratio
 	if err != nil {
 		return nil, err
 	}
-	var certs []*models.Certificate
+	type result struct {
+		cert *models.Certificate
+	}
+	results := make(chan result, len(domains))
+	sem := make(chan struct{}, 10)
+
+	var wg sync.WaitGroup
 	for _, d := range domains {
-		cert, err := s.ScanDomain(ctx, d.ID, timeout)
-		if err != nil {
-			continue
-		}
-		certs = append(certs, cert)
+		wg.Add(1)
+		go func(id int64) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			cert, err := s.ScanDomain(ctx, id, timeout)
+			if err != nil {
+				return
+			}
+			results <- result{cert: cert}
+		}(d.ID)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var certs []*models.Certificate
+	for r := range results {
+		certs = append(certs, r.cert)
 	}
 	return certs, nil
 }
