@@ -62,7 +62,11 @@ func (r *tagRepo) SetDomainTags(domainID int64, tagIDs []int64) error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			fmt.Printf("tx rollback error: %v\n", err)
+		}
+	}()
 
 	if _, err := tx.Exec(`DELETE FROM domain_tags WHERE domain_id = ?`, domainID); err != nil {
 		return fmt.Errorf("delete domain_tags: %w", err)
