@@ -69,6 +69,7 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tab
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/health` | No | Health check (includes DB ping) |
+| `GET` | `/api/version` | No | API version |
 | `POST` | `/api/auth/register` | RL | Register user |
 | `POST` | `/api/auth/login` | RL | Login, get JWT |
 | `GET` | `/api/domains` | Yes | List domains (`?q=&enabled=`) |

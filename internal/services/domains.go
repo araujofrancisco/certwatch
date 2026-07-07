@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"strings"
 	"time"
@@ -131,7 +132,9 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 		Status:      "error",
 		LastChecked: time.Now(),
 	}
-	_ = s.certs.Create(cert)
+	if err := s.certs.Create(cert); err != nil {
+		slog.Error("failed to save error cert", "domain_id", d.ID, "error", err)
+	}
 	return cert, fmt.Errorf("all scanners failed: %w", lastErr)
 }
 
@@ -237,7 +240,9 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 		}
 	}
 
-	_ = s.certs.Create(cert)
+	if err := s.certs.Create(cert); err != nil {
+		slog.Error("failed to save certificate", "domain_id", domainID, "error", err)
+	}
 	return cert
 }
 
@@ -252,7 +257,9 @@ func (s *DomainService) updateCert(existing *models.Certificate, result *discove
 		existing.Fingerprint = result.Fingerprint
 	}
 	existing.Protocol = result.Protocol
-	_ = s.certs.Update(existing)
+	if err := s.certs.Update(existing); err != nil {
+		slog.Error("failed to update certificate", "cert_id", existing.ID, "error", err)
+	}
 	return existing
 }
 
@@ -331,16 +338,20 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 		}
 
 		if len(p.Tags) > 0 {
-			_ = s.SetDomainTags(d.ID, p.Tags)
+			if err := s.SetDomainTags(d.ID, p.Tags); err != nil {
+				slog.Error("failed to set tags on bulk import", "domain_id", d.ID, "error", err)
+			}
 		}
 
 		res.Status = "created"
 
-		go func(id int64, name string) {
+		go func(id int64) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			_, _ = s.ScanDomain(ctx, id, 30*time.Second)
-		}(d.ID, d.Domain)
+			if _, err := s.ScanDomain(ctx, id, 30*time.Second); err != nil {
+				slog.Error("bulk import background scan failed", "domain_id", id, "error", err)
+			}
+		}(d.ID)
 
 		summary.Created++
 		results = append(results, res)

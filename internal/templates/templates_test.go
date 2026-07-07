@@ -48,12 +48,10 @@ func TestDailyDigest(t *testing.T) {
 
 func TestWeeklyReportDigest(t *testing.T) {
 	report := WeeklyReport{
-		TotalDomains:    10,
-		Healthy:         7,
-		Warning:         2,
-		Expired:         1,
-		Renewed:         3,
-		NewCertificates: 2,
+		TotalDomains: 10,
+		Healthy:      7,
+		Warning:      2,
+		Expired:      1,
 	}
 	subject, body := WeeklyReportDigest(report)
 	if !strings.Contains(subject, "Certificate Summary") {

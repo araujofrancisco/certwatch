@@ -4,7 +4,7 @@ info:
   description: |
     Lightweight, self-hosted SSL/TLS certificate inventory and expiration monitoring.
 
-    All API endpoints except `/health` and the auth endpoints require a JWT token obtained via `POST /api/auth/login`.
+    All API endpoints except `/health`, `/api/version`, and the auth endpoints require a JWT token obtained via `POST /api/auth/login`.
     Include it as `Authorization: Bearer <token>` in the request header.
 
     Rate limiting: auth endpoints (`/api/auth/*`) are limited to 10 requests per minute per IP.
@@ -44,8 +44,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-              example:
-                error: database unavailable
+
+  /api/version:
+    get:
+      tags: [Health]
+      summary: Version
+      description: Returns the current API version.
+      operationId: version
+      responses:
+        "200":
+          description: Version information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: "0.1.0"
 
   /api/auth/register:
     post:
