@@ -107,9 +107,16 @@ func (r *domainRepo) Delete(id int64) error {
 	if err != nil {
 		return fmt.Errorf("delete domain certificates: %w", err)
 	}
-	_, err = r.db.Exec(`DELETE FROM domains WHERE id = ?`, id)
+	res, err := r.db.Exec(`DELETE FROM domains WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete domain: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete domain rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("domain not found")
 	}
 	return nil
 }
