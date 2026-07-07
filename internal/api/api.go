@@ -48,6 +48,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/reports/inventory", authMiddleware(http.HandlerFunc(h.inventoryReport)))
 
 	h.RegisterUIRoutes(mux)
+	h.RegisterDocsRoutes(mux)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
