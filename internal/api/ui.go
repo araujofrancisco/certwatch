@@ -73,6 +73,10 @@ func (h *Handler) RegisterUIRoutes(mux *http.ServeMux) {
 	staticSub, _ := fs.Sub(staticFS, "web/static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dashboard", http.StatusFound)
+	})
+
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "login", pageData{Title: "Login"})
 	})
