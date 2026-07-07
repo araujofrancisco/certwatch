@@ -100,25 +100,22 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 		return nil, err
 	}
 
-	priorityOrder := []string{"https", "ct", "smtp", "imap", "pop3", "ldap", "ftp", "tls"}
-	scannerTimeouts := map[string]time.Duration{
-		"https": 5 * time.Second,
-		"ct":    10 * time.Second,
+	priorityOrder := []struct {
+		protocol string
+		timeout  time.Duration
+	}{
+		{"https", 5 * time.Second},
+		{"ct", 10 * time.Second},
 	}
 
 	var lastErr error
-	for _, protocol := range priorityOrder {
-		scanner := s.scanners.ForProtocol(protocol)
+	for _, p := range priorityOrder {
+		scanner := s.scanners.ForProtocol(p.protocol)
 		if scanner == nil {
 			continue
 		}
 
-		perTimeout := scannerTimeouts[protocol]
-		if perTimeout == 0 {
-			perTimeout = 2 * time.Second
-		}
-
-		scanCtx, cancel := context.WithTimeout(ctx, perTimeout)
+		scanCtx, cancel := context.WithTimeout(ctx, p.timeout)
 		result, err := scanner.Scan(scanCtx, d.Domain)
 		cancel()
 		if err != nil {

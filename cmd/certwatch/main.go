@@ -111,12 +111,6 @@ func run() error {
 
 	scannerReg := discovery.NewRegistry()
 	scannerReg.Register(discovery.NewHTTPSScanner(scanTimeout))
-	scannerReg.Register(discovery.NewSMTPScanner(scanTimeout))
-	scannerReg.Register(discovery.NewIMAPScanner(scanTimeout))
-	scannerReg.Register(discovery.NewPOP3Scanner(scanTimeout))
-	scannerReg.Register(discovery.NewLDAPScanner(scanTimeout))
-	scannerReg.Register(discovery.NewFTPScanner(scanTimeout))
-	scannerReg.Register(discovery.NewTLSScanner(scanTimeout))
 	scannerReg.Register(discovery.NewCTScanner(scanTimeout))
 
 	userRepo := repository.NewUserRepository(db)

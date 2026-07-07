@@ -160,6 +160,9 @@ func coversDomain(entry crtShEntry, domain string) bool {
 			if strings.HasSuffix(domain, suffix) {
 				return true
 			}
+			if domain == name[2:] {
+				return true
+			}
 		}
 	}
 	return false
