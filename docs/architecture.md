@@ -1,13 +1,13 @@
 # Architecture
 
-> Phase: 7 · Status: Updated — Groups, tags, domain update, security audit fixes
+> Phase: 9 · Status: Updated — OpenAPI docs, Scalar UI
 
 ## Pattern
 Clean architecture with dependency injection. Layer boundaries enforced by Go package imports — outer layers depend on inner layers, never the reverse.
 
 ```mermaid
 graph TD
-    subgraph "Phases 1-7 ✅"
+    subgraph "Phases 1-9 ✅"
         cmd/certwatch/ --> internal/config/
         cmd/certwatch/ --> internal/logging/
         cmd/certwatch/ --> internal/database/
@@ -19,6 +19,8 @@ graph TD
         internal/api/ --> U[internal/api/web/ 🔹 Phase 3 UI]
         U --> T[templates/ + static/]
         internal/api/ --> R[internal/api/reports.go 🔹 Phase 5]
+        internal/api/ --> D[internal/api/docs.go 🔹 Phase 9]
+        D --> O[openapi.yaml 🔹 internal/api/]
         internal/services/ --> I[internal/services/domains.go 🔹 Phase 7 bulk+groups+tags+update]
         internal/services/ --> internal/notifier/ --> internal/scheduler/
         internal/services/ --> internal/templates/

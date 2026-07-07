@@ -1,7 +1,7 @@
 # CertWatch — Agent instructions
 
 ## Status
-Phases 1–7 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS scanner, Bootstrap 5 web UI, cron notifications, reports, backup/restore scripts, bulk import, groups, tags, domain update). 84 tests pass. Security audit: 28/28 issues fixed (`docs/audit-report.md`).
+Phases 1–9 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS scanner, Bootstrap 5 web UI, cron notifications, reports, backup/restore scripts, bulk import, groups, tags, domain update, OpenAPI docs + Scalar UI). 84 tests pass. Security audit: 28/28 issues fixed (`docs/audit-report.md`).
 
 Git repo: `github.com/araujofrancisco/certwatch` — all committed on `main`.
 
@@ -48,12 +48,13 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tab
 - **Scheduler**: not cron-daemon — polls every 30s via `time.NewTicker`
 - **Notification dedup**: in-memory map `${certID}:${threshold}` (lost on restart)
 - **Web UI**: Go embed (`//go:embed`), no build step. 10 HTML templates at `internal/api/web/templates/`, static at `internal/api/web/static/`. Templates use `{{define "page"}}` to avoid name collisions.
+- **API docs**: OpenAPI 3.0 spec at `internal/api/openapi.yaml`. Served interactively via Scalar UI at `GET /api/docs` (loaded from CDN, ~1 KB embed). Raw YAML at `GET /api/docs/openapi.yaml`.
 - **Server-side filtering**: `GET /api/domains` and `GET /api/certificates` accept query params (`q`, `status`, `protocol`, `domain_id`, `expiring`, `expired`, `enabled`). Dynamic SQL with `LIKE` and parameterized queries.
 - **Groups**: `group_name` column on domains table. Optional text field on create/update. Filters not yet server-side.
 - **Tags**: M:N via `tags` + `domain_tags` tables with CASCADE deletes. Set on create/update/import. Random color assignment on creation.
 - **Domain update**: `PUT /api/domains/{id}` — updates domain name, description, group, enabled status, and tags
 - **Reports**: `GET /api/reports/inventory` returns combined domain+cert data with summary stats. UI has summary cards, client-side filters, CSV/JSON download buttons.
-- **CI** (`.github/workflows/ci.yml`): lint → test → build → check tidy. setup-go installs 1.22.5, toolchain auto-downloads 1.25.0 from go.mod requirement
+- **CI** (`.github/workflows/ci.yml`): lint → test → build → check tidy. setup-go installs 1.25, golangci-lint installed from source to match toolchain
 - **Route patterns**: Go 1.22+ syntax `"METHOD /path"` with `http.NewServeMux`
 - **Logging**: `slog`, not logrus/zap
 
@@ -82,6 +83,8 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tab
 | `DELETE` | `/api/certificates/errors` | Yes | Purge all error certs |
 | `DELETE` | `/api/domains/{id}/certificates/errors` | Yes | Purge error certs for domain |
 | `GET` | `/api/reports/inventory` | Yes | Inventory report with summary stats |
+| `GET` | `/api/docs` | No | Interactive API docs (Scalar UI, loaded from CDN) |
+| `GET` | `/api/docs/openapi.yaml` | No | Raw OpenAPI 3.0 spec |
 
 RL = rate-limited (10 req/min per IP)
 
