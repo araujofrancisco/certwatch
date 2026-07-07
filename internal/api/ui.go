@@ -39,7 +39,7 @@ func ensureTemplates() error {
 	var err error
 	loadTemplates.Do(func() {
 		pageTemplates = make(map[string]*pageTmpl)
-		for _, p := range []string{"dashboard", "domains", "domain-detail", "certificates", "reports", "import"} {
+		for _, p := range []string{"dashboard", "domains", "domain-detail", "certificates", "reports", "import", "settings"} {
 			t, e := template.ParseFS(templateFS,
 				"web/templates/layout.html",
 				"web/templates/"+p+".html",
@@ -123,6 +123,9 @@ func (h *Handler) RegisterUIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /import", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "import", pageData{Title: "Import Domains", Active: "import"})
+	})
+	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
+		renderPage(w, "settings", pageData{Title: "Settings", Active: "settings"})
 	})
 }
 

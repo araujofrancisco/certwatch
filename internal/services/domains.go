@@ -75,6 +75,30 @@ func (s *DomainService) attachTags(domains []*models.Domain) {
 	}
 }
 
+type PaginatedDomains struct {
+	Domains []*models.Domain `json:"domains"`
+	Total   int              `json:"total"`
+	Page    int              `json:"page"`
+	Limit   int              `json:"limit"`
+}
+
+func (s *DomainService) ListDomainsPaginated(filter models.DomainFilter) (*PaginatedDomains, error) {
+	domains, err := s.domains.ListFiltered(filter)
+	if err != nil {
+		return nil, err
+	}
+	s.attachTags(domains)
+	total, err := s.domains.CountFiltered(filter)
+	if err != nil {
+		return nil, err
+	}
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	return &PaginatedDomains{Domains: domains, Total: total, Page: page, Limit: filter.Limit}, nil
+}
+
 func (s *DomainService) ListDomains() ([]*models.Domain, error) {
 	domains, err := s.domains.List()
 	if err != nil {

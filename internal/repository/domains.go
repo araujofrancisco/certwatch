@@ -59,14 +59,43 @@ func (r *domainRepo) ListFiltered(filter models.DomainFilter) ([]*models.Domain,
 		where = " WHERE " + strings.Join(clauses, " AND ")
 	}
 
-	rows, err := r.db.Query(
-		`SELECT id, domain, description, enabled, group_name, created_at, updated_at FROM domains`+where+` ORDER BY domain`, args...,
-	)
+	query := `SELECT id, domain, description, enabled, group_name, created_at, updated_at FROM domains` + where + ` ORDER BY domain`
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d OFFSET %d", filter.Limit, filter.Offset())
+	}
+	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list filtered domains: %w", err)
 	}
 	defer rows.Close()
 	return scanDomains(rows)
+}
+
+func (r *domainRepo) CountFiltered(filter models.DomainFilter) (int, error) {
+	var clauses []string
+	var args []any
+
+	if filter.Query != "" {
+		clauses = append(clauses, "(domain LIKE ? OR description LIKE ?)")
+		q := "%" + filter.Query + "%"
+		args = append(args, q, q)
+	}
+	if filter.Enabled != nil {
+		clauses = append(clauses, "enabled = ?")
+		args = append(args, boolToInt(*filter.Enabled))
+	}
+
+	where := ""
+	if len(clauses) > 0 {
+		where = " WHERE " + strings.Join(clauses, " AND ")
+	}
+
+	row := r.db.QueryRow(`SELECT COUNT(*) FROM domains`+where, args...)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("count filtered domains: %w", err)
+	}
+	return count, nil
 }
 
 func (r *domainRepo) List() ([]*models.Domain, error) {

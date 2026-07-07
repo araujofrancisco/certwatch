@@ -21,6 +21,7 @@ type DomainRepository interface {
 	List() ([]*models.Domain, error)
 	ListEnabled() ([]*models.Domain, error)
 	ListFiltered(filter models.DomainFilter) ([]*models.Domain, error)
+	CountFiltered(filter models.DomainFilter) (int, error)
 	Update(d *models.Domain) error
 	Delete(id int64) error
 }
@@ -32,6 +33,7 @@ type CertificateRepository interface {
 	LatestForDomain(domainID int64) (*models.Certificate, error)
 	List() ([]*models.Certificate, error)
 	ListFiltered(filter models.CertFilter) ([]*models.Certificate, error)
+	CountFiltered(filter models.CertFilter) (int, error)
 	Update(c *models.Certificate) error
 	Delete(id int64) error
 	DeleteErrors() (int64, error)

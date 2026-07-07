@@ -41,12 +41,19 @@ func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
 		Enabled: enabled,
 	}
 
-	domains, err := h.domains.ListDomainsFiltered(f)
+	if page, err := strconv.Atoi(q.Get("page")); err == nil && page > 0 {
+		f.Page = page
+	}
+	if limit, err := strconv.Atoi(q.Get("limit")); err == nil && limit > 0 {
+		f.Limit = limit
+	}
+
+	domains, err := h.domains.ListDomainsPaginated(f)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list domains")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"domains": domains})
+	writeJSON(w, http.StatusOK, domains)
 }
 
 func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {

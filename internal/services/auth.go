@@ -53,6 +53,25 @@ func (s *AuthService) Register(email, password, name string) (*models.User, erro
 	return created, nil
 }
 
+func (s *AuthService) ChangePassword(userID int64, currentPassword, newPassword string) error {
+	if len(newPassword) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	user, err := s.users.FindByID(userID)
+	if err != nil {
+		return fmt.Errorf("user not found")
+	}
+	if err := auth.CheckPassword(user.Password, currentPassword); err != nil {
+		return fmt.Errorf("current password is incorrect")
+	}
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	user.Password = hash
+	return s.users.Update(user)
+}
+
 func (s *AuthService) Login(email, password string) (*LoginResponse, error) {
 	user, err := s.users.FindByEmail(email)
 	if err != nil {

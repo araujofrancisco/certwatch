@@ -93,16 +93,60 @@ func (r *certRepo) ListFiltered(filter models.CertFilter) ([]*models.Certificate
 		where = " WHERE " + strings.Join(clauses, " AND ")
 	}
 
-	rows, err := r.db.Query(
-		`SELECT id, domain_id, issuer, subject, serial, not_before, not_after,
-		        fingerprint, protocol, status, last_checked, created_at, updated_at
-		 FROM certificates`+where+` ORDER BY not_after DESC`, args...,
-	)
+	query := `SELECT id, domain_id, issuer, subject, serial, not_before, not_after,
+	          fingerprint, protocol, status, last_checked, created_at, updated_at
+	         FROM certificates` + where + ` ORDER BY not_after DESC`
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d OFFSET %d", filter.Limit, filter.Offset())
+	}
+	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list filtered certificates: %w", err)
 	}
 	defer rows.Close()
 	return scanCerts(rows)
+}
+
+func (r *certRepo) CountFiltered(filter models.CertFilter) (int, error) {
+	var clauses []string
+	var args []any
+
+	if filter.Query != "" {
+		clauses = append(clauses, "(subject LIKE ? OR issuer LIKE ?)")
+		q := "%" + filter.Query + "%"
+		args = append(args, q, q)
+	}
+	if filter.DomainID != nil {
+		clauses = append(clauses, "domain_id = ?")
+		args = append(args, *filter.DomainID)
+	}
+	if filter.Status != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, filter.Status)
+	}
+	if filter.Protocol != "" {
+		clauses = append(clauses, "protocol = ?")
+		args = append(args, filter.Protocol)
+	}
+	if filter.Expiring > 0 {
+		clauses = append(clauses, "not_after > datetime('now') AND not_after <= datetime('now', '+' || ? || ' days')")
+		args = append(args, filter.Expiring)
+	}
+	if filter.Expired {
+		clauses = append(clauses, "not_after < datetime('now')")
+	}
+
+	where := ""
+	if len(clauses) > 0 {
+		where = " WHERE " + strings.Join(clauses, " AND ")
+	}
+
+	row := r.db.QueryRow(`SELECT COUNT(*) FROM certificates`+where, args...)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("count filtered certificates: %w", err)
+	}
+	return count, nil
 }
 
 func (r *certRepo) List() ([]*models.Certificate, error) {

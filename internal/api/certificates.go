@@ -33,13 +33,19 @@ func (h *Handler) listCertificates(w http.ResponseWriter, r *http.Request) {
 	if q.Get("expired") == "true" || q.Get("expired") == "1" {
 		f.Expired = true
 	}
+	if page, err := strconv.Atoi(q.Get("page")); err == nil && page > 0 {
+		f.Page = page
+	}
+	if limit, err := strconv.Atoi(q.Get("limit")); err == nil && limit > 0 {
+		f.Limit = limit
+	}
 
-	certs, err := h.certs.ListCertificatesFiltered(f)
+	certs, err := h.certs.ListCertificatesPaginated(f)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list certificates")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"certificates": certs})
+	writeJSON(w, http.StatusOK, certs)
 }
 
 func (h *Handler) listDomainCertificates(w http.ResponseWriter, r *http.Request) {

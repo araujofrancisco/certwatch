@@ -49,7 +49,6 @@ document.getElementById('importBtn').addEventListener('click', async () => {
   const text = document.getElementById('domainList').value;
   const description = document.getElementById('importDescription').value;
   const group = document.getElementById('importGroup').value;
-  const tags = document.getElementById('importTags').value.split(',').map(t => t.trim()).filter(t => t.length > 0);
   const errEl = document.getElementById('importError');
   errEl.classList.add('d-none');
 
@@ -63,7 +62,16 @@ document.getElementById('importBtn').addEventListener('click', async () => {
   document.getElementById('importBtn').disabled = true;
   document.getElementById('importBtn').textContent = 'Importing...';
 
-  const domains = lines.map(d => ({domain: d, description, group, tags}));
+  const sharedTags = document.getElementById('importTags').value.split(',').map(t => t.trim()).filter(t => t.length > 0);
+  const domains = lines.map(line => {
+    const parts = line.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    if (parts.length > 1) {
+      const domain = parts[0];
+      const lineTags = parts.slice(1);
+      return {domain, description, group, tags: lineTags};
+    }
+    return {domain: parts[0], description, group, tags: sharedTags};
+  });
   const data = await apiFetch('/api/domains/import', {
     method: 'POST',
     body: JSON.stringify({domains})
@@ -73,8 +81,10 @@ document.getElementById('importBtn').addEventListener('click', async () => {
   document.getElementById('importBtn').textContent = 'Import';
 
   if (!data || !data.results) {
-    errEl.textContent = data && data.error ? data.error : 'Import failed';
+    const msg = data && data.error ? data.error : 'Import failed';
+    errEl.textContent = msg;
     errEl.classList.remove('d-none');
+    showToast(msg, 'error');
     return;
   }
 
@@ -85,6 +95,7 @@ document.getElementById('importBtn').addEventListener('click', async () => {
     <span class="badge bg-warning me-2">Skipped: ${s.skipped}</span>
     <span class="badge bg-danger me-2">Errors: ${s.errors}</span>
   `;
+  showToast('Import complete: ' + s.created + ' created, ' + s.skipped + ' skipped, ' + s.errors + ' errors', s.errors > 0 ? 'warning' : 'success');
 
   const tbody = document.getElementById('resultsBody');
   tbody.innerHTML = '';

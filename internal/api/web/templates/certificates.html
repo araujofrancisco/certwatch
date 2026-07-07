@@ -45,14 +45,33 @@
 <div class="table-responsive">
   <table class="table table-striped" id="certsTable">
     <thead><tr><th>Domain</th><th>Subject</th><th>Issuer</th><th>Expires</th><th>Days</th><th>Status</th></tr></thead>
-    <tbody id="certsBody"></tbody>
+    <tbody id="certsBody">
+    <tr class="skeleton-row"><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:40%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
+    <tr class="skeleton-row"><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:40%">&nbsp;</span></td><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
+    <tr class="skeleton-row"><td><span class="skeleton" style="width:55%">&nbsp;</span></td><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:40%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
+  </tbody>
   </table>
+  <nav class="d-none" id="certPagination">
+    <ul class="pagination pagination-sm justify-content-center mt-3">
+      <li class="page-item" id="certPrev"><button class="page-link" onclick="loadCertsPage(currentCertPage - 1)">Previous</button></li>
+      <li class="page-item disabled"><span class="page-link" id="certPageInfo">Page 1</span></li>
+      <li class="page-item" id="certNext"><button class="page-link" onclick="loadCertsPage(currentCertPage + 1)">Next</button></li>
+    </ul>
+  </nav>
+</div>
+<div id="emptyCerts" class="empty-state d-none">
+  <h4>No certificates found</h4>
+  <p>No certificates match your current filters.</p>
 </div>
 {{end}}
 {{define "scripts"}}
 <script>
-let loadCertsId = 0;
-async function loadCertificates() {
+var currentCertPage = 1;
+var certPageLimit = 25;
+var loadCertsId = 0;
+function loadCertificates() { loadCertsPage(1); }
+async function loadCertsPage(page) {
+  currentCertPage = page;
   const id = ++loadCertsId;
   const q = document.getElementById('certSearch').value;
   const status = document.getElementById('certStatus').value;
@@ -72,19 +91,30 @@ async function loadCertificates() {
   if (protocol) params.set('protocol', protocol);
   if (expiring) params.set('expiring', expiring);
   if (expired) params.set('expired', 'true');
+  params.set('page', page);
+  params.set('limit', certPageLimit);
 
   const certQuery = '/api/certificates?' + params.toString();
   const [certsData, domainsData] = await Promise.all([
     apiFetch(certQuery),
-    apiFetch('/api/domains')
+    apiFetch('/api/domains?limit=0')
   ]);
   if (!certsData || !domainsData || id !== loadCertsId) return;
   const domainMap = {};
   (domainsData.domains || []).forEach(d => domainMap[d.id] = d.domain);
   const tbody = document.getElementById('certsBody');
   if (id !== loadCertsId) return;
+  document.querySelectorAll('#certsBody .skeleton-row').forEach(function(r) { r.remove(); });
+  document.getElementById('emptyCerts').classList.add('d-none');
+  var pag = document.getElementById('certPagination');
+  if (pag) pag.classList.add('d-none');
+  const certsList = certsData.certificates || [];
+  if (certsList.length === 0 && page === 1) {
+    document.getElementById('emptyCerts').classList.remove('d-none');
+    return;
+  }
   tbody.innerHTML = '';
-  (certsData.certificates || []).sort((a, b) => daysUntil(a.not_after) - daysUntil(b.not_after)).forEach(c => {
+  certsList.sort((a, b) => daysUntil(a.not_after) - daysUntil(b.not_after)).forEach(c => {
     const days = daysUntil(c.not_after);
     tbody.innerHTML += `<tr>
       <td><a href="/domains/${c.domain_id}">${escapeHtml(domainMap[c.domain_id] || '?')}</a></td>
@@ -95,12 +125,21 @@ async function loadCertificates() {
       <td><span class="${statusClass(c.status)}">${c.status}</span></td>
     </tr>`;
   });
+  makeSortable('certsTable');
+  if (pag && certsData.total > certPageLimit) {
+    pag.classList.remove('d-none');
+    document.getElementById('certPageInfo').textContent = 'Page ' + page + ' of ' + Math.ceil(certsData.total / certPageLimit);
+    document.getElementById('certPrev').classList.toggle('disabled', page <= 1);
+    document.getElementById('certNext').classList.toggle('disabled', page * certPageLimit >= certsData.total);
+  }
 }
 async function purgeAllErrors() {
+  const ok = await showConfirm('Purge All Errors', 'Delete all error certificates across all domains?');
+  if (!ok) return;
   const data = await apiFetch('/api/certificates/errors', {method: 'DELETE'});
   if (data) {
-    alert('Deleted ' + data.deleted + ' error certificate(s)');
-    location.reload();
+    showToast('Deleted ' + data.deleted + ' error certificate(s)', 'success');
+    loadCertificates();
   }
 }
 requireAuth();

@@ -1,9 +1,7 @@
 # CertWatch — Agent instructions
 
 ## Status
-Phases 1–9 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS scanner, Bootstrap 5 web UI, cron notifications, reports, backup/restore scripts, bulk import, groups, tags, domain update, OpenAPI docs + Scalar UI). 84 tests pass. Security audit: 28/28 issues fixed (`docs/audit-report.md`).
-
-Git repo: `github.com/araujofrancisco/certwatch` — all committed on `main`.
+Phases 1–9 implemented (Go backend, REST API, JWT auth, SQLite, HTTPS+CT scanners, Bootstrap 5 web UI, cron notifications, reports, backup/restore scripts, bulk import, groups, tags, domain update, OpenAPI docs + Scalar UI). All tests pass. Security audit: 28/28 issues fixed (`docs/audit-report.md`).
 
 Module: `github.com/araujofrancisco/certwatch` — matches all import paths.
 
@@ -29,7 +27,7 @@ All packages are `internal/` — not importable from outside the module.
 ## Config
 Loading order: defaults → `config/default.yaml` → `CERTWATCH_*` env vars. `CERTWATCH_CONFIG` env overrides config path.
 
-Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tables on startup (`users`, `domains`, `certificates`, `notification_profiles`, `tags`, `domain_tags`). **`EnsureDir` before `Open`** (was audit bug H4).
+Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tables on startup (`users`, `domains`, `certificates`, `notification_profiles`, `tags`, `domain_tags`). **`EnsureDir` before `Open`** (was audit bug H4). Migrations are inline SQL in `internal/database/database.go` — the `migrations/` dir at repo root is empty (placeholder).
 
 ## Key quirks
 - **`-health` flag**: binary supports `-health` for Docker healthcheck (tries port from config, falls back to 8080)
@@ -40,6 +38,7 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tab
 - **Password policy**: minimum 8 characters on registration
 - **Input length limits**: description ≤500 chars, group ≤100 chars
 - **Scanner registration** in `main.go`. Priority order: HTTPS → CT → SMTP → IMAP → POP3 → LDAP → FTP → TLS
+- **Only HTTPS and CT are registered** in `main.go`. The SMTP/IMAP/POP3/LDAP/FTP/TLS stubs exist in `internal/discovery/` but are **not registered**.
 - **Sequential scanner** in `ScanDomain`: tries each protocol in priority order with per-scanner timeout (HTTPS 5s, CT 10s, stubs 2s). First success wins. No more waiting for all scanners to finish.
 - **Auto-scan on add**: domains are scanned in background goroutine when created via `POST /api/domains`
 - **HTTPS scanner**: uses `ServerName` (SNI) + 5s dialer timeout
@@ -47,7 +46,8 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tab
 - **Certificate dedup**: `saveCertificate` checks fingerprint first, then `serial+issuer`. Updates existing cert if match found.
 - **Scheduler**: not cron-daemon — polls every 30s via `time.NewTicker`
 - **Notification dedup**: in-memory map `${certID}:${threshold}` (lost on restart)
-- **Web UI**: Go embed (`//go:embed`), no build step. 10 HTML templates at `internal/api/web/templates/`, static at `internal/api/web/static/`. Templates use `{{define "page"}}` to avoid name collisions.
+- **Web UI**: Go embed (`//go:embed`), no build step. 11 HTML templates at `internal/api/web/templates/`, static at `internal/api/web/static/`. Templates use `{{define "page"}}` to avoid name collisions. A separate `docs.html` is embedded raw (not parsed as a template) for the Scalar UI docs page. 6 pages use `layout.html` (dashboard, domains, domain-detail, certificates, reports, import, settings); 2 pages use `auth-layout.html` (login, register).
+- **UI features**: Dark mode toggle (persisted in localStorage), toast notifications, confirmation dialogs, loading skeletons, empty states, client-side table sorting, server-side pagination on domains/certificates lists (25 per page), dedicated dashboard endpoint `GET /api/dashboard`, bulk import per-domain tags via `domain,tag1,tag2` format, settings page at `/settings` with password change.
 - **API docs**: OpenAPI 3.0 spec at `internal/api/openapi.yaml`. Served interactively via Scalar UI at `GET /api/docs` (loaded from CDN, ~1 KB embed). Raw YAML at `GET /api/docs/openapi.yaml`.
 - **Server-side filtering**: `GET /api/domains` and `GET /api/certificates` accept query params (`q`, `status`, `protocol`, `domain_id`, `expiring`, `expired`, `enabled`). Dynamic SQL with `LIKE` and parameterized queries.
 - **Groups**: `group_name` column on domains table. Optional text field on create/update. Filters not yet server-side.
@@ -57,6 +57,9 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tab
 - **CI** (`.github/workflows/ci.yml`): lint → test → build → check tidy. setup-go installs 1.25, golangci-lint installed from source to match toolchain
 - **Route patterns**: Go 1.22+ syntax `"METHOD /path"` with `http.NewServeMux`
 - **Logging**: `slog`, not logrus/zap
+- **No golangci-lint config** — runs with defaults
+- **Backup script** (`scripts/backup.sh`) respects `$BACKUP_DIR` (default `./backups`) and `$RETENTION_DAYS` (default 30)
+- **Tests** use real SQLite in `os.MkdirTemp` dirs — no mocks, no test DB fixtures
 
 ## Style
 - Raw SQL with parameterized queries (no ORM)
@@ -83,11 +86,11 @@ Database: SQLite via `modernc.org/sqlite` (pure Go, no CGO). Auto-migrates 6 tab
 | `GET` | `/api/domains/{id}/certificates` | Yes | List certs for domain |
 | `DELETE` | `/api/certificates/errors` | Yes | Purge all error certs |
 | `DELETE` | `/api/domains/{id}/certificates/errors` | Yes | Purge error certs for domain |
+| `GET` | `/api/dashboard` | Yes | Dashboard summary (counts + top 10 expiring) |
+| `PUT` | `/api/auth/password` | Yes | Change password |
 | `GET` | `/api/reports/inventory` | Yes | Inventory report with summary stats |
 | `GET` | `/api/docs` | No | Interactive API docs (Scalar UI, loaded from CDN) |
 | `GET` | `/api/docs/openapi.yaml` | No | Raw OpenAPI 3.0 spec |
 
 RL = rate-limited (10 req/min per IP)
 
-## Docs
-Start at `docs/_index.md`.

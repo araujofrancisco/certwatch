@@ -2,75 +2,81 @@
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
   <h1 class="h2">Dashboard</h1>
 </div>
-<div class="row" id="dashboardCards">
-  <div class="col-md-3 mb-3">
-    <div class="card card-dashboard healthy">
-      <div class="card-body">
-        <h5 class="card-title">Healthy</h5>
-        <p class="card-text display-6" id="countHealthy">-</p>
+  <div class="row" id="dashboardCards">
+    <div class="col-md-3 mb-3">
+      <div class="card card-dashboard healthy">
+        <div class="card-body">
+          <h5 class="card-title">Healthy</h5>
+          <p class="card-text display-6"><span class="skeleton" id="skeletonHealthy" style="width:3rem">&nbsp;</span><span id="countHealthy" class="d-none"></span></p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 mb-3">
+      <div class="card card-dashboard warning">
+        <div class="card-body">
+          <h5 class="card-title">Warning (≤14d)</h5>
+          <p class="card-text display-6"><span class="skeleton" id="skeletonWarning" style="width:3rem">&nbsp;</span><span id="countWarning" class="d-none"></span></p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 mb-3">
+      <div class="card card-dashboard critical">
+        <div class="card-body">
+          <h5 class="card-title">Expired</h5>
+          <p class="card-text display-6"><span class="skeleton" id="skeletonExpired" style="width:3rem">&nbsp;</span><span id="countExpired" class="d-none"></span></p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 mb-3">
+      <div class="card card-dashboard">
+        <div class="card-body">
+          <h5 class="card-title">Domains</h5>
+          <p class="card-text display-6"><span class="skeleton" id="skeletonDomains" style="width:3rem">&nbsp;</span><span id="countDomains" class="d-none"></span></p>
+        </div>
       </div>
     </div>
   </div>
-  <div class="col-md-3 mb-3">
-    <div class="card card-dashboard warning">
-      <div class="card-body">
-        <h5 class="card-title">Warning (≤14d)</h5>
-        <p class="card-text display-6" id="countWarning">-</p>
-      </div>
-    </div>
+  <h3 class="mt-4">Expiring Soon</h3>
+  <div class="table-responsive">
+    <table class="table table-striped" id="expiringTable">
+      <thead><tr><th>Domain</th><th>Issuer</th><th>Expires</th><th>Days</th></tr></thead>
+      <tbody id="expiringBody">
+        <tr class="skeleton-row"><td><span class="skeleton" style="width:60%">&nbsp;</span></td><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:40%">&nbsp;</span></td><td><span class="skeleton" style="width:30%">&nbsp;</span></td></tr>
+        <tr class="skeleton-row"><td><span class="skeleton" style="width:55%">&nbsp;</span></td><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:40%">&nbsp;</span></td><td><span class="skeleton" style="width:30%">&nbsp;</span></td></tr>
+        <tr class="skeleton-row"><td><span class="skeleton" style="width:65%">&nbsp;</span></td><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:40%">&nbsp;</span></td><td><span class="skeleton" style="width:30%">&nbsp;</span></td></tr>
+      </tbody>
+    </table>
   </div>
-  <div class="col-md-3 mb-3">
-    <div class="card card-dashboard critical">
-      <div class="card-body">
-        <h5 class="card-title">Expired</h5>
-        <p class="card-text display-6" id="countExpired">-</p>
-      </div>
-    </div>
+  <div id="emptyDashboard" class="empty-state d-none">
+    <h4>No certificates tracked yet</h4>
+    <p>Add your first domain to start monitoring certificate expirations.</p>
+    <a href="/domains" class="btn btn-primary">Add Domain</a>
   </div>
-  <div class="col-md-3 mb-3">
-    <div class="card card-dashboard">
-      <div class="card-body">
-        <h5 class="card-title">Domains</h5>
-        <p class="card-text display-6" id="countDomains">-</p>
-      </div>
-    </div>
-  </div>
-</div>
-<h3 class="mt-4">Expiring Soon</h3>
-<div class="table-responsive">
-  <table class="table table-striped" id="expiringTable">
-    <thead><tr><th>Domain</th><th>Issuer</th><th>Expires</th><th>Days</th></tr></thead>
-    <tbody id="expiringBody"></tbody>
-  </table>
-</div>
 {{end}}
 {{define "scripts"}}
 <script>
 async function loadDashboard() {
-  const [certs, domains] = await Promise.all([
-    apiFetch('/api/certificates'),
-    apiFetch('/api/domains')
-  ]);
-  if (!certs || !domains) return;
-  const domainMap = {};
-  (domains.domains || []).forEach(d => domainMap[d.id] = d.domain);
-  let healthy = 0, warning = 0, expired = 0;
-  const expiring = [];
-  (certs.certificates || []).forEach(c => {
-    const days = daysUntil(c.not_after);
-    if (days <= 0) expired++;
-    else if (days <= 14) { warning++; expiring.push(c); }
-    else healthy++;
+  const data = await apiFetch('/api/dashboard');
+  if (!data) return;
+  document.getElementById('countHealthy').textContent = data.healthy;
+  document.getElementById('countWarning').textContent = data.warning;
+  document.getElementById('countExpired').textContent = data.expired;
+  document.getElementById('countDomains').textContent = data.total_domains;
+  ['Healthy','Warning','Expired','Domains'].forEach(function(id) {
+    var sk = document.getElementById('skeleton' + id);
+    var ct = document.getElementById('count' + id);
+    if (sk) sk.classList.add('d-none');
+    if (ct) ct.classList.remove('d-none');
   });
-  document.getElementById('countHealthy').textContent = healthy;
-  document.getElementById('countWarning').textContent = warning;
-  document.getElementById('countExpired').textContent = expired;
-  document.getElementById('countDomains').textContent = (domains.domains || []).length;
-  const tbody = document.getElementById('expiringBody');
-  expiring.sort((a, b) => daysUntil(a.not_after) - daysUntil(b.not_after));
-  expiring.slice(0, 10).forEach(c => {
-    const days = daysUntil(c.not_after);
-    tbody.innerHTML += `<tr><td>${escapeHtml(domainMap[c.domain_id] || '?')}</td><td>${escapeHtml(c.issuer)}</td><td>${new Date(c.not_after).toLocaleDateString()}</td><td class="${statusClass(days <= 0 ? 'expired' : 'warning')}">${days}</td></tr>`;
+  var tbody = document.getElementById('expiringBody');
+  tbody.innerHTML = '';
+  var expiring = data.expiring_soon || [];
+  if (expiring.length === 0 && data.total_domains > 0) {
+    document.getElementById('emptyDashboard').classList.remove('d-none');
+    return;
+  }
+  expiring.forEach(function(c) {
+    tbody.innerHTML += '<tr><td><a href="/domains/' + c.domain_id + '">' + escapeHtml(c.domain) + '</a></td><td>' + escapeHtml(c.issuer) + '</td><td>' + new Date(c.expires_at).toLocaleDateString() + '</td><td class="' + statusClass('warning') + '">' + c.days_remaining + '</td></tr>';
   });
 }
 requireAuth();
