@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -134,8 +135,9 @@ func (s *ctScanner) fetch(ctx context.Context, q string) ([]crtShEntry, error) {
 		return nil, fmt.Errorf("ct: crt.sh returned status %d", resp.StatusCode)
 	}
 
+	limited := io.LimitReader(resp.Body, 10<<20) // 10 MB limit
 	var entries []crtShEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+	if err := json.NewDecoder(limited).Decode(&entries); err != nil {
 		return nil, fmt.Errorf("ct: decode response: %w", err)
 	}
 

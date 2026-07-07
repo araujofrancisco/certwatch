@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"net/mail"
 	"strings"
 
 	"github.com/araujofrancisco/certwatch/internal/auth"
@@ -18,7 +19,7 @@ func (s *AuthService) Register(email, password, name string) (*models.User, erro
 	if email == "" {
 		return nil, fmt.Errorf("email is required")
 	}
-	if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
+	if _, err := mail.ParseAddress(email); err != nil {
 		return nil, fmt.Errorf("invalid email address")
 	}
 	if password == "" {

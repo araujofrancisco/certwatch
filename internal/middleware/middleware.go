@@ -185,13 +185,25 @@ func (rl *RateLimiter) Allow(key string) bool {
 	return true
 }
 
+func clientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		parts := strings.Split(fwd, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if real := r.Header.Get("X-Real-IP"); real != "" {
+		return strings.TrimSpace(real)
+	}
+	ip := r.RemoteAddr
+	if addr := strings.LastIndex(ip, ":"); addr != -1 {
+		ip = ip[:addr]
+	}
+	return ip
+}
+
 func RateLimit(rl *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := r.RemoteAddr
-			if addr := strings.LastIndex(ip, ":"); addr != -1 {
-				ip = ip[:addr]
-			}
+			ip := clientIP(r)
 			if !rl.Allow(ip) {
 				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
 				return
