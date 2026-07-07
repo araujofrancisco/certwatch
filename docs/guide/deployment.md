@@ -50,6 +50,7 @@ The included `docker-compose.yml` configures:
 - Log in JSON format (`CERTWATCH_LOGGING_FORMAT=json`) for production to integrate with log aggregators
 - Use environment variables for secrets (never commit them)
 - Override `CERTWATCH_AUTH_SECRET` with a strong random value — the binary warns on startup if the default is detected
+- Set `CERTWATCH_SERVER_CORS_ORIGINS` to your dashboard URL(s) — e.g. `https://certwatch.example.com`. Multiple origins: comma-separated
 
 ## Backup and restore
 
@@ -135,6 +136,11 @@ Add to crontab for daily automated backups:
 ### Security
 - The container uses a multi-stage scratch build (no shell, no package manager)
 - All input is validated: domain format, email format, request body size (1 MB limit)
-- Rate limiting on auth endpoints (10 req/min per IP)
+- Rate limiting on auth endpoints (10 req/min per IP, sliding window, port-stripped)
+- CORS restricted to configurable origins (default `http://localhost:8080`) — set `CERTWATCH_SERVER_CORS_ORIGINS` for custom domains
+- Security headers sent on all responses: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
+- Password minimum 8 characters on registration
+- Input length limits: description ≤500, group ≤100
+- Registration errors are generic — no email enumeration
 - Parameterized SQL queries throughout (no injection risk)
 - `html/template` auto-escapes all UI output

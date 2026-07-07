@@ -36,6 +36,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/domains/import", authMiddleware(http.HandlerFunc(h.importDomains)))
 	mux.Handle("POST /api/domains", authMiddleware(http.HandlerFunc(h.createDomain)))
 	mux.Handle("GET /api/domains/{id}", authMiddleware(http.HandlerFunc(h.getDomain)))
+	mux.Handle("PUT /api/domains/{id}", authMiddleware(http.HandlerFunc(h.updateDomain)))
 	mux.Handle("DELETE /api/domains/{id}", authMiddleware(http.HandlerFunc(h.deleteDomain)))
 	mux.Handle("POST /api/domains/{id}/scan", authMiddleware(http.HandlerFunc(h.scanDomain)))
 

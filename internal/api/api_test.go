@@ -40,12 +40,13 @@ func setupAPI(t *testing.T) (*Handler, *auth.Authenticator, string) {
 	userRepo := repository.NewUserRepository(db)
 	domainRepo := repository.NewDomainRepository(db)
 	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
 
 	scannerReg := discovery.NewRegistry()
 	scannerReg.Register(discovery.NewHTTPSScanner(5 * time.Second))
 
 	authSvc := services.NewAuthService(userRepo, authenticator)
-	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg)
+	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo)
 	certSvc := services.NewCertificateService(certRepo, domainRepo)
 
 	rl := middleware.NewRateLimiter(100, time.Minute)

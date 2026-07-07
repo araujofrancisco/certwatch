@@ -16,8 +16,22 @@ type Domain struct {
 	Domain      string    `json:"domain"`
 	Description string    `json:"description"`
 	Enabled     bool      `json:"enabled"`
+	Group       string    `json:"group"`
+	Tags        []Tag     `json:"tags,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type Tag struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Color     string    `json:"color"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type DomainTag struct {
+	DomainID int64 `json:"domain_id"`
+	TagID    int64 `json:"tag_id"`
 }
 
 type Certificate struct {
@@ -37,8 +51,9 @@ type Certificate struct {
 }
 
 type DomainFilter struct {
-	Query   string // search domain + description
-	Enabled *bool  // nil = all, non-nil = filter
+	Query   string   // search domain + description
+	Enabled *bool    // nil = all, non-nil = filter
+	Tags    []string // filter by tag names
 }
 
 type CertFilter struct {

@@ -73,6 +73,15 @@ notifications:
       day: Monday
 ```
 
+### Security
+
+- **Security headers**: All responses include CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy, X-XSS-Protection.
+- **CORS**: Configurable allowed origins via `server.cors_allowed_origins` (YAML) or `CERTWATCH_SERVER_CORS_ORIGINS` (comma-separated). Default: `http://localhost:8080`.
+- **Rate limiting**: Auth endpoints are limited to 10 req/min per IP (sliding window, port-stripped).
+- **Password policy**: Minimum 8 characters on registration.
+- **Input limits**: Request body 1 MB max; description ≤500 chars; group ≤100 chars.
+- **Info disclosure**: Registration errors are generic — no email enumeration.
+
 ### Environment variables
 
 | Variable | Overrides | Default |
@@ -80,6 +89,7 @@ notifications:
 | `CERTWATCH_CONFIG` | Config file path | `config/default.yaml` |
 | `CERTWATCH_SERVER_HOST` | `server.host` | `0.0.0.0` |
 | `CERTWATCH_SERVER_PORT` | `server.port` | `8080` |
+| `CERTWATCH_SERVER_CORS_ORIGINS` | `server.cors_allowed_origins` | `http://localhost:8080` |
 | `CERTWATCH_DATABASE_DRIVER` | `database.driver` | `sqlite` |
 | `CERTWATCH_DATABASE_DSN` | `database.dsn` | `certwatch.db` |
 | `CERTWATCH_LOGGING_LEVEL` | `logging.level` | `info` |
@@ -101,7 +111,7 @@ Environment variables take precedence over the config file.
 
 All API endpoints (except `/health` and auth endpoints) require a `Bearer` token in the `Authorization` header.
 
-Auth endpoints are rate-limited to **10 requests per minute per IP**. All request bodies are limited to **1 MB**.
+Auth endpoints are rate-limited to **10 requests per minute per IP** (sliding window). All request bodies are limited to **1 MB**.
 
 ### Health
 ```bash
@@ -111,7 +121,7 @@ curl http://localhost:8080/health
 
 ### Auth
 ```bash
-# Register
+# Register (password must be at least 8 characters)
 curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@example.com","password":"CHANGE_ME","name":"Admin"}'
@@ -127,25 +137,32 @@ curl -X POST http://localhost:8080/api/auth/login \
 Domains are automatically scanned in a background goroutine when created.
 
 ```bash
-# Add domain (auto-scans in background)
+# Add domain with optional group and tags (auto-scans in background)
 curl -X POST http://localhost:8080/api/domains \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
-  -d '{"domain":"example.com","description":"My site"}'
+  -d '{"domain":"example.com","description":"My site","group":"production","tags":["tls","wildcard"]}'
 
 # List domains (with optional filters)
 curl "http://localhost:8080/api/domains?q=example&enabled=true" \
   -H "Authorization: Bearer <token>"
 
-# Get domain
+# Get domain (includes tags array)
 curl http://localhost:8080/api/domains/1 \
   -H "Authorization: Bearer <token>"
+# Response: {"domain":{"id":1,"domain":"example.com","group":"production","tags":[{"id":1,"name":"tls","color":"#0d6efd"}],...}}
 
-# Bulk import domains (array of objects)
+# Update domain (name, description, group, enabled, tags)
+curl -X PUT http://localhost:8080/api/domains/1 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"domain":"example.org","description":"Updated","group":"staging","enabled":false,"tags":["updated-tag"]}'
+
+# Bulk import domains with group and tags (array of objects)
 curl -X POST http://localhost:8080/api/domains/import \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
-  -d '{"domains":[{"domain":"example.com","description":"Site A"},{"domain":"example.org"}]}'
+  -d '{"domains":[{"domain":"example.com","description":"Site A","group":"prod","tags":["important"]},{"domain":"example.org","group":"dev"}]}'
 
 # Bulk import domains (plain string array)
 curl -X POST http://localhost:8080/api/domains/import \
@@ -153,8 +170,8 @@ curl -X POST http://localhost:8080/api/domains/import \
   -H "Authorization: Bearer <token>" \
   -d '{"domains":["example.com","example.org","example.net"]}'
 
-# Response format
-# {"results":[{"domain":"example.com","status":"created"},...],"summary":{"total":3,"created":2,"skipped":1,"errors":0}}
+# Response format (always HTTP 200 — per-item status in results)
+# {"results":[{"domain":"example.com","status":"created","group":"prod","tags":["important"]},...],"summary":{"total":2,"created":2,"skipped":0,"errors":0}}
 
 # Delete domain (cascade deletes certificates)
 curl -X DELETE http://localhost:8080/api/domains/1 \
@@ -193,6 +210,15 @@ curl "http://localhost:8080/api/domains/1/certificates?status=valid" \
 | `q` | `?q=example` | Search domain + description (LIKE) |
 | `enabled` | `?enabled=true` | Filter by enabled state |
 
+**Domain update request body:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `domain` | string | Required, valid domain name |
+| `description` | string | Optional, max 500 chars |
+| `group` | string | Optional, max 100 chars |
+| `enabled` | bool | Enable/disable scanning |
+| `tags` | string[] | Optional, replaces all existing tags |
+
 ### Purge error certificates
 
 ```bash
@@ -225,9 +251,9 @@ The built-in web dashboard is served via Go embed — no separate build step req
 | `/login` | Sign in with email/password (returns JWT stored in localStorage) |
 | `/register` | Create a new account |
 | `/dashboard` | Summary cards (healthy/warning/expired counts) + expiring certificates |
-| `/domains` | Domain list with search, enabled filter, scan/delete actions |
-| `/domains/{id}` | Domain detail with certificate history and purge errors button |
-| `/import` | Bulk import domains (paste one per line) |
+| `/domains` | Domain list with search, enabled filter, scan/delete actions, add/edit modals with group+tags |
+| `/domains/{id}` | Domain detail with group, tags, certificate history, edit button, and purge errors |
+| `/import` | Bulk import domains (paste one per line) with optional group and tags per line |
 | `/certificates` | All certificates with search, status/protocol/expiry filters |
 | `/reports` | Inventory report with summary stats, client-side filters, JSON/CSV download |
 
@@ -241,10 +267,10 @@ The import page (`/import`) accepts domains pasted one per line in a textarea, w
 
 | Format | Example |
 |--------|---------|
-| Objects with description | `{"domains":[{"domain":"a.com","description":"My site"}]}` |
+| Objects with group/tags | `{"domains":[{"domain":"a.com","description":"My site","group":"prod","tags":["tls"]}]}` |
 | Plain strings | `{"domains":["a.com","b.com"]}` |
 
-Each domain is validated, deduplicated, created, and auto-scanned in a background goroutine. Duplicates and invalid domains produce status `skipped` or `error` without failing the entire batch.
+Each domain is validated, deduplicated, created, and auto-scanned in a background goroutine. Duplicates and invalid domains produce status `skipped` or `error` without failing the entire batch. The endpoint always returns HTTP 200 — check per-result status.
 
 ## Health check
 

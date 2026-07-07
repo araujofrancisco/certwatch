@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,8 +19,9 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
+	Host              string   `yaml:"host"`
+	Port              int      `yaml:"port"`
+	CORSAllowedOrigins []string `yaml:"cors_allowed_origins"`
 }
 
 type DatabaseConfig struct {
@@ -70,8 +72,9 @@ type ProfileConfig struct {
 func Default() Config {
 	return Config{
 		Server: ServerConfig{
-			Host: "0.0.0.0",
-			Port: 8080,
+			Host:              "0.0.0.0",
+			Port:              8080,
+			CORSAllowedOrigins: []string{"http://localhost:8080", "http://127.0.0.1:8080"},
 		},
 		Database: DatabaseConfig{
 			Driver: "sqlite",
@@ -171,6 +174,15 @@ func applyEnvOverrides(cfg Config) Config {
 	if v := os.Getenv("CERTWATCH_SMTP_PASSWORD"); v != "" {
 		cfg.Notifications.SMTP.Password = v
 	}
+	if v := os.Getenv("CERTWATCH_SERVER_CORS_ORIGINS"); v != "" {
+		origins := []string{}
+		for _, o := range splitAndTrim(v, ",") {
+			if o != "" {
+				origins = append(origins, o)
+			}
+		}
+		cfg.Server.CORSAllowedOrigins = origins
+	}
 	if v := os.Getenv("CERTWATCH_SMTP_FROM"); v != "" {
 		cfg.Notifications.SMTP.From = v
 	}
@@ -179,6 +191,17 @@ func applyEnvOverrides(cfg Config) Config {
 
 func (c Config) ServerAddr() string {
 	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port)
+}
+
+func splitAndTrim(s, sep string) []string {
+	var result []string
+	for _, part := range strings.Split(s, sep) {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 

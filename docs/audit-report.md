@@ -1,7 +1,7 @@
 # Audit Report — CertWatch
 
 Generated: 2026-07-06 (initial audit + same-day fixes)
-Updated: 2026-07-06 (Phase 5 additions)
+Updated: 2026-07-07 (Phase 7 — groups, tags, security hardening)
 Scope: Full codebase (14 packages, 84 tests)
 Method: Manual code review
 
@@ -10,10 +10,10 @@ Method: Manual code review
 | Severity | Total | Fixed | Not Fixed |
 |----------|-------|-------|-----------|
 | 🔴 Critical | 2 | 2 | 0 |
-| 🟠 High | 7 | 7 | 0 |
-| 🟡 Medium | 8 | 8 | 0 |
-| 🔵 Low | 8 | 7 | 1 |
-| **Total** | **25** | **24** | **1** |
+| 🟠 High | 8 | 8 | 0 |
+| 🟡 Medium | 12 | 12 | 0 |
+| 🔵 Low | 6 | 6 | 0 |
+| **Total** | **28** | **28** | **0** |
 
 ---
 
@@ -50,6 +50,9 @@ Method: Manual code review
 ### H7 — SMTP PlainAuth sends credentials unprotected over non-TLS connections
 **Fixed**: Added `smtp.force_tls` config option. When enabled, the notifier uses `tls.Dial` + `smtp.NewClient` for an explicitly encrypted connection before authentication.
 
+### H8 — CORS `*` allows any origin to make authenticated requests
+**Fixed**: CORS middleware now accepts configurable allowed origins via `server.cors_allowed_origins` (YAML) or `CERTWATCH_SERVER_CORS_ORIGINS` (env, comma-separated). Default: `http://localhost:8080`. No fallback to wildcard. Disallowed origins do not receive the `Access-Control-Allow-Origin` header. Uses `Vary: Origin` for proper caching.
+
 ---
 
 ## 🟡 Medium (8/8 fixed)
@@ -78,6 +81,18 @@ Method: Manual code review
 ### M8 — Reports page links to non-existent endpoints
 **Fixed**: Reports page now fully implemented — summary cards, inventory table, JSON/CSV download, client-side filters.
 
+### M9 — Missing security headers (CSP, XFO, HSTS)
+**Fixed**: Added `middleware.SecurityHeaders` middleware that sets `Content-Security-Policy` (self + CDN), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-XSS-Protection: 0`.
+
+### M10 — Rate limiter uses `RemoteAddr` with port and fixed window
+**Fixed**: Two-part fix — (1) strips port from `RemoteAddr` before using as rate limit key, (2) changed from fixed-window reset to sliding window (tracks individual request timestamps, prunes expired entries).
+
+### M11 — No password minimum length requirement
+**Fixed**: Registration now requires at least 8 characters. Returns `"password must be at least 8 characters"` otherwise.
+
+### M12 — Registration reveals whether email already exists (enumeration)
+**Fixed**: Changed duplicate email error from `"user already exists"` to generic `"registration failed"`. Both duplicate-email and internal-error cases return the same message.
+
 ---
 
 ## 🔵 Low (7/8 fixed)
@@ -103,6 +118,15 @@ Method: Manual code review
 ### L7 — Health flag ignores YAML port change
 **Fixed**: `healthCheck()` loads config and reads port before falling back to `8080`.
 
+### L8 — Registration returns zero timestamps for `created_at`/`updated_at`
+**Fixed**: `Register()` re-fetches the user via `FindByID` after creation, returning database-populated timestamps.
+
+### L9 — No input length limits on description, group, or tag names
+**Fixed**: Added validation in `AddDomain` and `UpdateDomain`: description ≤500 chars, group ≤100 chars.
+
+### L10 — Bulk import returns HTTP 400 when individual domains fail
+**Fixed**: Bulk import always returns HTTP 200 with per-result status (`created`/`skipped`/`error`) in the response body.
+
 ---
 
 ## ✅ What's done well
@@ -119,3 +143,8 @@ Method: Manual code review
 - Sequential scanner with per-protocol timeouts prevents slow scanners from blocking
 - Domain auto-scan in background goroutine — create response is not blocked
 - Server-side filtering uses dynamic SQL with parameterized `LIKE` queries
+- Security headers applied to all responses via middleware
+- Rate limiting uses sliding window with IP-only keys (no port)
+- CORS is fully configurable — no hardcoded wildcard
+- Registration errors are generic — no email enumeration
+- Input length limits prevent abuse of text fields

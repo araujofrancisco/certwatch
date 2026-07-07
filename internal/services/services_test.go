@@ -30,18 +30,19 @@ func setupServices(t *testing.T) (*DomainService, *CertificateService, *AuthServ
 	userRepo := repository.NewUserRepository(db)
 	domainRepo := repository.NewDomainRepository(db)
 	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
 
 	scannerReg := discovery.NewRegistry()
 	scannerReg.Register(discovery.NewHTTPSScanner(0))
 
-	return NewDomainService(domainRepo, certRepo, scannerReg),
+	return NewDomainService(domainRepo, certRepo, scannerReg, tagRepo),
 		NewCertificateService(certRepo, domainRepo),
 		NewAuthService(userRepo, nil)
 }
 
 func TestAddDomain(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	d, err := domainSvc.AddDomain("example.com", "test")
+	d, err := domainSvc.AddDomain("example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,11 +53,11 @@ func TestAddDomain(t *testing.T) {
 
 func TestAddDomainDuplicate(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	_, err := domainSvc.AddDomain("example.com", "test")
+	_, err := domainSvc.AddDomain("example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = domainSvc.AddDomain("example.com", "test")
+	_, err = domainSvc.AddDomain("example.com", "test", "")
 	if err == nil {
 		t.Error("expected error for duplicate domain")
 	}
@@ -64,7 +65,7 @@ func TestAddDomainDuplicate(t *testing.T) {
 
 func TestAddDomainEmpty(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	_, err := domainSvc.AddDomain("", "test")
+	_, err := domainSvc.AddDomain("", "test", "")
 	if err == nil {
 		t.Error("expected error for empty domain")
 	}
@@ -72,8 +73,8 @@ func TestAddDomainEmpty(t *testing.T) {
 
 func TestListDomains(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	_, _ = domainSvc.AddDomain("example.com", "test")
-	_, _ = domainSvc.AddDomain("example.org", "test2")
+	_, _ = domainSvc.AddDomain("example.com", "test", "")
+	_, _ = domainSvc.AddDomain("example.org", "test2", "")
 
 	domains, err := domainSvc.ListDomains()
 	if err != nil {
@@ -86,7 +87,7 @@ func TestListDomains(t *testing.T) {
 
 func TestDeleteDomain(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	d, _ := domainSvc.AddDomain("example.com", "test")
+	d, _ := domainSvc.AddDomain("example.com", "test", "")
 	if err := domainSvc.DeleteDomain(d.ID); err != nil {
 		t.Fatal(err)
 	}

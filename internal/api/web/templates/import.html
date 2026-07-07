@@ -15,6 +15,14 @@
           <label class="form-label">Description (optional, applies to all)</label>
           <input type="text" class="form-control" id="importDescription" placeholder="Imported domains">
         </div>
+        <div class="mb-3">
+          <label class="form-label">Group (optional, applies to all)</label>
+          <input type="text" class="form-control" id="importGroup" placeholder="production, staging, internal">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Tags (optional, comma separated, applies to all)</label>
+          <input type="text" class="form-control" id="importTags" placeholder="ssl, monitoring, critical">
+        </div>
         <button class="btn btn-primary" id="importBtn">Import</button>
       </div>
     </div>
@@ -40,6 +48,8 @@
 document.getElementById('importBtn').addEventListener('click', async () => {
   const text = document.getElementById('domainList').value;
   const description = document.getElementById('importDescription').value;
+  const group = document.getElementById('importGroup').value;
+  const tags = document.getElementById('importTags').value.split(',').map(t => t.trim()).filter(t => t.length > 0);
   const errEl = document.getElementById('importError');
   errEl.classList.add('d-none');
 
@@ -53,7 +63,7 @@ document.getElementById('importBtn').addEventListener('click', async () => {
   document.getElementById('importBtn').disabled = true;
   document.getElementById('importBtn').textContent = 'Importing...';
 
-  const domains = lines.map(d => ({domain: d, description}));
+  const domains = lines.map(d => ({domain: d, description, group, tags}));
   const data = await apiFetch('/api/domains/import', {
     method: 'POST',
     body: JSON.stringify({domains})
@@ -93,6 +103,8 @@ document.getElementById('importBtn').addEventListener('click', async () => {
   document.getElementById('resultsArea').classList.remove('d-none');
   document.getElementById('domainList').value = '';
   document.getElementById('importDescription').value = '';
+  document.getElementById('importGroup').value = '';
+  document.getElementById('importTags').value = '';
 });
 requireAuth();
 </script>

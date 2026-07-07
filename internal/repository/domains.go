@@ -15,8 +15,8 @@ type domainRepo struct {
 
 func (r *domainRepo) Create(d *models.Domain) error {
 	res, err := r.db.Exec(
-		`INSERT INTO domains (domain, description, enabled) VALUES (?, ?, ?)`,
-		d.Domain, d.Description, boolToInt(d.Enabled),
+		`INSERT INTO domains (domain, description, enabled, group_name) VALUES (?, ?, ?, ?)`,
+		d.Domain, d.Description, boolToInt(d.Enabled), d.Group,
 	)
 	if err != nil {
 		return fmt.Errorf("create domain: %w", err)
@@ -28,14 +28,14 @@ func (r *domainRepo) Create(d *models.Domain) error {
 
 func (r *domainRepo) FindByID(id int64) (*models.Domain, error) {
 	row := r.db.QueryRow(
-		`SELECT id, domain, description, enabled, created_at, updated_at FROM domains WHERE id = ?`, id,
+		`SELECT id, domain, description, enabled, group_name, created_at, updated_at FROM domains WHERE id = ?`, id,
 	)
 	return scanDomain(row)
 }
 
 func (r *domainRepo) FindByDomain(domain string) (*models.Domain, error) {
 	row := r.db.QueryRow(
-		`SELECT id, domain, description, enabled, created_at, updated_at FROM domains WHERE domain = ?`, domain,
+		`SELECT id, domain, description, enabled, group_name, created_at, updated_at FROM domains WHERE domain = ?`, domain,
 	)
 	return scanDomain(row)
 }
@@ -60,7 +60,7 @@ func (r *domainRepo) ListFiltered(filter models.DomainFilter) ([]*models.Domain,
 	}
 
 	rows, err := r.db.Query(
-		`SELECT id, domain, description, enabled, created_at, updated_at FROM domains`+where+` ORDER BY domain`, args...,
+		`SELECT id, domain, description, enabled, group_name, created_at, updated_at FROM domains`+where+` ORDER BY domain`, args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list filtered domains: %w", err)
@@ -71,7 +71,7 @@ func (r *domainRepo) ListFiltered(filter models.DomainFilter) ([]*models.Domain,
 
 func (r *domainRepo) List() ([]*models.Domain, error) {
 	rows, err := r.db.Query(
-		`SELECT id, domain, description, enabled, created_at, updated_at FROM domains ORDER BY domain`,
+		`SELECT id, domain, description, enabled, group_name, created_at, updated_at FROM domains ORDER BY domain`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
@@ -82,7 +82,7 @@ func (r *domainRepo) List() ([]*models.Domain, error) {
 
 func (r *domainRepo) ListEnabled() ([]*models.Domain, error) {
 	rows, err := r.db.Query(
-		`SELECT id, domain, description, enabled, created_at, updated_at FROM domains WHERE enabled = 1 ORDER BY domain`,
+		`SELECT id, domain, description, enabled, group_name, created_at, updated_at FROM domains WHERE enabled = 1 ORDER BY domain`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list enabled domains: %w", err)
@@ -93,8 +93,8 @@ func (r *domainRepo) ListEnabled() ([]*models.Domain, error) {
 
 func (r *domainRepo) Update(d *models.Domain) error {
 	_, err := r.db.Exec(
-		`UPDATE domains SET domain = ?, description = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		d.Domain, d.Description, boolToInt(d.Enabled), d.ID,
+		`UPDATE domains SET domain = ?, description = ?, enabled = ?, group_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		d.Domain, d.Description, boolToInt(d.Enabled), d.Group, d.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update domain: %w", err)
@@ -118,7 +118,7 @@ func scanDomain(s scanner) (*models.Domain, error) {
 	var d models.Domain
 	var createdAt, updatedAt sql.NullTime
 	var enabled int
-	err := s.Scan(&d.ID, &d.Domain, &d.Description, &enabled, &createdAt, &updatedAt)
+	err := s.Scan(&d.ID, &d.Domain, &d.Description, &enabled, &d.Group, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("domain not found")

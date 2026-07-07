@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/araujofrancisco/certwatch/internal/models"
 )
 
-func (s *DomainService) AddDomain(domain, description string) (*models.Domain, error) {
+func (s *DomainService) AddDomain(domain, description, group string) (*models.Domain, error) {
 	domain = strings.TrimSpace(strings.ToLower(domain))
 	if domain == "" {
 		return nil, fmt.Errorf("domain is required")
@@ -18,9 +19,18 @@ func (s *DomainService) AddDomain(domain, description string) (*models.Domain, e
 	if !isValidDomain(domain) {
 		return nil, fmt.Errorf("invalid domain name: %q", domain)
 	}
+	description = strings.TrimSpace(description)
+	group = strings.TrimSpace(group)
+	if len(description) > 500 {
+		return nil, fmt.Errorf("description too long (max 500)")
+	}
+	if len(group) > 100 {
+		return nil, fmt.Errorf("group too long (max 100)")
+	}
 	d := &models.Domain{
 		Domain:      domain,
 		Description: description,
+		Group:       group,
 		Enabled:     true,
 	}
 	if err := s.domains.Create(d); err != nil {
@@ -33,15 +43,51 @@ func (s *DomainService) AddDomain(domain, description string) (*models.Domain, e
 }
 
 func (s *DomainService) GetDomain(id int64) (*models.Domain, error) {
-	return s.domains.FindByID(id)
+	d, err := s.domains.FindByID(id)
+	if err != nil {
+		return nil, err
+	}
+	ptags, err := s.tags.GetDomainTags(d.ID)
+	if err == nil {
+		d.Tags = derefTags(ptags)
+	}
+	return d, nil
 }
 
 func (s *DomainService) ListDomains() ([]*models.Domain, error) {
-	return s.domains.List()
+	domains, err := s.domains.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range domains {
+		ptags, err := s.tags.GetDomainTags(d.ID)
+		if err == nil {
+			d.Tags = derefTags(ptags)
+		}
+	}
+	return domains, nil
 }
 
 func (s *DomainService) ListDomainsFiltered(f models.DomainFilter) ([]*models.Domain, error) {
-	return s.domains.ListFiltered(f)
+	domains, err := s.domains.ListFiltered(f)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range domains {
+		ptags, err := s.tags.GetDomainTags(d.ID)
+		if err == nil {
+			d.Tags = derefTags(ptags)
+		}
+	}
+	return domains, nil
+}
+
+func derefTags(ptags []*models.Tag) []models.Tag {
+	tags := make([]models.Tag, len(ptags))
+	for i, t := range ptags {
+		tags[i] = *t
+	}
+	return tags
 }
 
 func (s *DomainService) DeleteDomain(id int64) error {
@@ -92,6 +138,84 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 	return cert, fmt.Errorf("all scanners failed: %w", lastErr)
 }
 
+func (s *DomainService) UpdateDomain(id int64, domain, description, group string, enabled bool, tags []string) (*models.Domain, error) {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	if domain == "" {
+		return nil, fmt.Errorf("domain is required")
+	}
+	if !isValidDomain(domain) {
+		return nil, fmt.Errorf("invalid domain name: %q", domain)
+	}
+	description = strings.TrimSpace(description)
+	group = strings.TrimSpace(group)
+	if len(description) > 500 {
+		return nil, fmt.Errorf("description too long (max 500)")
+	}
+	if len(group) > 100 {
+		return nil, fmt.Errorf("group too long (max 100)")
+	}
+
+	d, err := s.domains.FindByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	d.Domain = domain
+	d.Description = description
+	d.Group = group
+	d.Enabled = enabled
+
+	if err := s.domains.Update(d); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return nil, fmt.Errorf("domain already exists")
+		}
+		return nil, err
+	}
+
+	if tags != nil {
+		if err := s.SetDomainTags(d.ID, tags); err != nil {
+			return nil, err
+		}
+	}
+
+	return s.GetDomain(d.ID)
+}
+
+func (s *DomainService) SetDomainTags(domainID int64, tagNames []string) error {
+	tags, err := s.ensureTags(tagNames)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for _, t := range tags {
+		ids = append(ids, t.ID)
+	}
+	return s.tags.SetDomainTags(domainID, ids)
+}
+
+func (s *DomainService) ensureTags(names []string) ([]*models.Tag, error) {
+	var result []*models.Tag
+	for _, n := range names {
+		tag, err := s.tags.FindByName(n)
+		if err != nil {
+			tag, err = s.tags.Create(n, randomTagColor())
+			if err != nil {
+				return nil, err
+			}
+		}
+		result = append(result, tag)
+	}
+	return result, nil
+}
+
+func randomTagColor() string {
+	palette := []string{
+		"#0d6efd", "#6610f2", "#6f42c1", "#d63384", "#dc3545",
+		"#fd7e14", "#ffc107", "#198754", "#20c997", "#0dcaf0",
+	}
+	return palette[rand.Intn(len(palette))]
+}
+
 func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result) *models.Certificate {
 	cert := &models.Certificate{
 		DomainID:    domainID,
@@ -138,13 +262,17 @@ func (s *DomainService) updateCert(existing *models.Certificate, result *discove
 type BulkDomainEntry struct {
 	Domain      string
 	Description string
+	Group       string
+	Tags        []string
 }
 
 type BulkAddResult struct {
-	Domain      string `json:"domain"`
-	Status      string `json:"status"` // "created", "skipped", "error"
-	Error       string `json:"error,omitempty"`
-	Description string `json:"description,omitempty"`
+	Domain      string   `json:"domain"`
+	Status      string   `json:"status"` // "created", "skipped", "error"
+	Error       string   `json:"error,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Group       string   `json:"group,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 type BulkAddSummary struct {
@@ -164,7 +292,7 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 	var summary BulkAddSummary
 
 	for _, p := range pairs {
-		res := &BulkAddResult{Domain: p.Domain, Description: p.Description}
+		res := &BulkAddResult{Domain: p.Domain, Description: p.Description, Group: p.Group, Tags: p.Tags}
 
 		domain := strings.TrimSpace(strings.ToLower(p.Domain))
 		if domain == "" {
@@ -194,6 +322,7 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 		d := &models.Domain{
 			Domain:      domain,
 			Description: p.Description,
+			Group:       p.Group,
 			Enabled:     true,
 		}
 		if err := s.domains.Create(d); err != nil {
@@ -202,6 +331,10 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 			summary.Errors++
 			results = append(results, res)
 			continue
+		}
+
+		if len(p.Tags) > 0 {
+			_ = s.SetDomainTags(d.ID, p.Tags)
 		}
 
 		res.Status = "created"

@@ -24,6 +24,9 @@ func (s *AuthService) Register(email, password, name string) (*models.User, erro
 	if password == "" {
 		return nil, fmt.Errorf("password is required")
 	}
+	if len(password) < 8 {
+		return nil, fmt.Errorf("password must be at least 8 characters")
+	}
 
 	hashed, err := auth.HashPassword(password)
 	if err != nil {
@@ -36,9 +39,17 @@ func (s *AuthService) Register(email, password, name string) (*models.User, erro
 		Name:     name,
 	}
 	if err := s.users.Create(user); err != nil {
-		return nil, err
+		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "already exists") {
+			return nil, fmt.Errorf("registration failed")
+		}
+		return nil, fmt.Errorf("registration failed")
 	}
-	return user, nil
+
+	created, err := s.users.FindByID(user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("registration failed")
+	}
+	return created, nil
 }
 
 func (s *AuthService) Login(email, password string) (*LoginResponse, error) {

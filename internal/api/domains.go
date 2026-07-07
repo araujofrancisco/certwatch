@@ -12,8 +12,18 @@ import (
 )
 
 type createDomainRequest struct {
-	Domain      string `json:"domain"`
-	Description string `json:"description"`
+	Domain      string   `json:"domain"`
+	Description string   `json:"description"`
+	Group       string   `json:"group"`
+	Tags        []string `json:"tags,omitempty"`
+}
+
+type updateDomainRequest struct {
+	Domain      string   `json:"domain"`
+	Description string   `json:"description"`
+	Group       string   `json:"group"`
+	Enabled     bool     `json:"enabled"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
@@ -45,11 +55,17 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domain, err := h.domains.AddDomain(req.Domain, req.Description)
+	domain, err := h.domains.AddDomain(req.Domain, req.Description, req.Group)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	if len(req.Tags) > 0 {
+		_ = h.domains.SetDomainTags(domain.ID, req.Tags)
+	}
+
+	domain, _ = h.domains.GetDomain(domain.ID)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -58,6 +74,28 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	writeJSON(w, http.StatusCreated, map[string]any{"domain": domain})
+}
+
+func (h *Handler) updateDomain(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid domain id")
+		return
+	}
+
+	var req updateDomainRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	domain, err := h.domains.UpdateDomain(id, req.Domain, req.Description, req.Group, req.Enabled, req.Tags)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"domain": domain})
 }
 
 func (h *Handler) importDomains(w http.ResponseWriter, r *http.Request) {
@@ -74,12 +112,19 @@ func (h *Handler) importDomains(w http.ResponseWriter, r *http.Request) {
 	var pairs []services.BulkDomainEntry
 
 	var objs []struct {
-		Domain      string `json:"domain"`
-		Description string `json:"description"`
+		Domain      string   `json:"domain"`
+		Description string   `json:"description"`
+		Group       string   `json:"group"`
+		Tags        []string `json:"tags,omitempty"`
 	}
 	if err := json.Unmarshal(raw.Domains, &objs); err == nil {
 		for _, o := range objs {
-			pairs = append(pairs, services.BulkDomainEntry{Domain: o.Domain, Description: o.Description})
+			pairs = append(pairs, services.BulkDomainEntry{
+				Domain:      o.Domain,
+				Description: o.Description,
+				Group:       o.Group,
+				Tags:        o.Tags,
+			})
 		}
 	} else {
 		var strs []string
@@ -98,11 +143,7 @@ func (h *Handler) importDomains(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := h.domains.BulkAddDomains(pairs)
-	status := http.StatusOK
-	if result.Summary.Errors > 0 {
-		status = http.StatusBadRequest
-	}
-	writeJSON(w, status, result)
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {

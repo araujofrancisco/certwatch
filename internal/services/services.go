@@ -10,6 +10,7 @@ type DomainService struct {
 	domains  repository.DomainRepository
 	certs    repository.CertificateRepository
 	scanners *discovery.Registry
+	tags     repository.TagRepository
 }
 
 type CertificateService struct {
@@ -22,8 +23,8 @@ type AuthService struct {
 	auth  *auth.Authenticator
 }
 
-func NewDomainService(domains repository.DomainRepository, certs repository.CertificateRepository, scanners *discovery.Registry) *DomainService {
-	return &DomainService{domains: domains, certs: certs, scanners: scanners}
+func NewDomainService(domains repository.DomainRepository, certs repository.CertificateRepository, scanners *discovery.Registry, tags repository.TagRepository) *DomainService {
+	return &DomainService{domains: domains, certs: certs, scanners: scanners, tags: tags}
 }
 
 func NewCertificateService(certs repository.CertificateRepository, domains repository.DomainRepository) *CertificateService {

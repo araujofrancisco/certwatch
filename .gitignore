@@ -1,4 +1,4 @@
-certwatch
+/certwatch
 build/
 *.db
 *.db-wal

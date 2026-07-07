@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,31 +74,71 @@ func Auth(authenticator *auth.Authenticator) func(http.Handler) http.Handler {
 	}
 }
 
-func CORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			allowed := ""
+			for _, o := range allowedOrigins {
+				if o == "*" || sameOrigin(o, origin) {
+					allowed = origin
+					break
+				}
+			}
+			if allowed == "" && isLocalhostOrigin(origin) {
+				allowed = origin
+			}
+			if allowed != "" {
+				w.Header().Set("Access-Control-Allow-Origin", allowed)
+				w.Header().Set("Vary", "Origin")
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func sameOrigin(a, b string) bool {
+	if a == b {
+		return true
+	}
+	au, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	bu, err := url.Parse(b)
+	if err != nil {
+		return false
+	}
+	return au.Hostname() == bu.Hostname() && au.Port() == bu.Port() && au.Scheme == bu.Scheme
+}
+
+func isLocalhostOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
 }
 
 type RateLimiter struct {
 	mu       sync.Mutex
-	requests map[string]int
+	entries  map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
 
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 	rl := &RateLimiter{
-		requests: make(map[string]int),
-		limit:    limit,
-		window:   window,
+		entries: make(map[string][]time.Time),
+		limit:   limit,
+		window:  window,
 	}
 	go rl.cleanup()
 	return rl
@@ -106,7 +148,20 @@ func (rl *RateLimiter) cleanup() {
 	for {
 		time.Sleep(rl.window)
 		rl.mu.Lock()
-		rl.requests = make(map[string]int)
+		now := time.Now()
+		for key, times := range rl.entries {
+			var kept []time.Time
+			for _, t := range times {
+				if now.Sub(t) < rl.window {
+					kept = append(kept, t)
+				}
+			}
+			if len(kept) == 0 {
+				delete(rl.entries, key)
+			} else {
+				rl.entries[key] = kept
+			}
+		}
 		rl.mu.Unlock()
 	}
 }
@@ -114,11 +169,19 @@ func (rl *RateLimiter) cleanup() {
 func (rl *RateLimiter) Allow(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	count := rl.requests[key]
-	if count >= rl.limit {
+	now := time.Now()
+	times := rl.entries[key]
+	var recent []time.Time
+	for _, t := range times {
+		if now.Sub(t) < rl.window {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) >= rl.limit {
+		rl.entries[key] = recent
 		return false
 	}
-	rl.requests[key] = count + 1
+	rl.entries[key] = append(recent, now)
 	return true
 }
 
@@ -126,6 +189,9 @@ func RateLimit(rl *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
+			if addr := strings.LastIndex(ip, ":"); addr != -1 {
+				ip = ip[:addr]
+			}
 			if !rl.Allow(ip) {
 				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
 				return

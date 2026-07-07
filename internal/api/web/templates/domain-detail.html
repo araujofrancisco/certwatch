@@ -2,6 +2,7 @@
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
   <h1 class="h2">{{.Domain.Domain}}</h1>
   <div>
+    <button class="btn btn-outline-secondary" onclick="editDomain({{.Domain.ID}})">Edit</button>
     <button class="btn btn-primary" onclick="scanDomain({{.Domain.ID}})">Scan Now</button>
     <button class="btn btn-outline-warning" onclick="purgeDomainErrors({{.Domain.ID}})">Purge Errors</button>
     <button class="btn btn-outline-danger" onclick="deleteDomain({{.Domain.ID}})">Delete</button>
@@ -12,6 +13,8 @@
     <dl>
       <dt>Domain</dt><dd>{{.Domain.Domain}}</dd>
       <dt>Description</dt><dd>{{.Domain.Description}}</dd>
+      <dt>Group</dt><dd>{{if .Domain.Group}}{{.Domain.Group}}{{else}}-{{end}}</dd>
+      <dt>Tags</dt><dd>{{if .Domain.Tags}}{{range .Domain.Tags}}<span class="badge" style="background-color:{{.Color}};color:#fff">{{.Name}}</span> {{end}}{{else}}-{{end}}</dd>
       <dt>Enabled</dt><dd>{{if .Domain.Enabled}}Yes{{else}}No{{end}}</dd>
       <dt>Added</dt><dd>{{.Domain.CreatedAt}}</dd>
     </dl>
@@ -56,6 +59,27 @@ async function purgeDomainErrors(id) {
   const data = await apiFetch('/api/domains/' + id + '/certificates/errors', {method: 'DELETE'});
   if (data && data.deleted > 0) {
     location.reload();
+  }
+}
+async function editDomain(id) {
+  const data = await apiFetch('/api/domains/' + id);
+  if (!data || !data.domain) return;
+  const d = data.domain;
+  const newDomain = prompt('Domain:', d.domain);
+  if (!newDomain) return;
+  const newDesc = prompt('Description:', d.description) || '';
+  const newGroup = prompt('Group:', d.group || '') || '';
+  const newTags = prompt('Tags (comma separated):', (d.tags || []).map(t => t.name).join(', ')) || '';
+  const newEnabled = confirm('Click OK to keep enabled, Cancel to disable.');
+  const tags = newTags.split(',').map(t => t.trim()).filter(t => t.length > 0);
+  const result = await apiFetch('/api/domains/' + id, {
+    method: 'PUT',
+    body: JSON.stringify({domain: newDomain, description: newDesc, group: newGroup, enabled: newEnabled, tags})
+  });
+  if (result && !result.error) {
+    location.reload();
+  } else {
+    alert(result ? result.error : 'Error updating domain');
   }
 }
 requireAuth();

@@ -46,6 +46,17 @@ type NotificationProfileRepository interface {
 	Delete(id int64) error
 }
 
+type TagRepository interface {
+	Create(name, color string) (*models.Tag, error)
+	FindByID(id int64) (*models.Tag, error)
+	FindByName(name string) (*models.Tag, error)
+	List() ([]*models.Tag, error)
+	Delete(id int64) error
+	SetDomainTags(domainID int64, tagIDs []int64) error
+	GetDomainTags(domainID int64) ([]*models.Tag, error)
+	ListByTagNames(names []string) ([]int64, error)
+}
+
 func NewUserRepository(db *database.DB) UserRepository {
 	return &userRepo{db: db}
 }
@@ -60,4 +71,8 @@ func NewCertificateRepository(db *database.DB) CertificateRepository {
 
 func NewNotificationProfileRepository(db *database.DB) NotificationProfileRepository {
 	return &notifProfileRepo{db: db}
+}
+
+func NewTagRepository(db *database.DB) TagRepository {
+	return &tagRepo{db: db}
 }

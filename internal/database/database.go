@@ -46,6 +46,8 @@ func (db *DB) Migrate() error {
 		createDomainsTable,
 		createCertificatesTable,
 		createNotificationProfilesTable,
+		createTagsTable,
+		createDomainTagsTable,
 	}
 
 	for i, m := range migrations {
@@ -85,6 +87,7 @@ CREATE TABLE IF NOT EXISTS domains (
     domain       TEXT    NOT NULL UNIQUE,
     description  TEXT    NOT NULL DEFAULT '',
     enabled      INTEGER NOT NULL DEFAULT 1,
+    group_name   TEXT    NOT NULL DEFAULT '',
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
 );`
@@ -104,6 +107,21 @@ CREATE TABLE IF NOT EXISTS certificates (
     last_checked  DATETIME,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);`
+
+const createTagsTable = `
+CREATE TABLE IF NOT EXISTS tags (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL UNIQUE,
+    color       TEXT    NOT NULL DEFAULT '#6c757d',
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);`
+
+const createDomainTagsTable = `
+CREATE TABLE IF NOT EXISTS domain_tags (
+    domain_id   INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (domain_id, tag_id)
 );`
 
 const createNotificationProfilesTable = `
