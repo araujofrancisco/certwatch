@@ -29,7 +29,11 @@ function toggleTheme() {
 }
 function updateThemeIcon(theme) {
   var el = document.getElementById('themeToggle');
-  if (el) el.textContent = theme === 'dark' ? '☀️' : '🌙';
+  if (!el) return;
+  var icon = el.querySelector('i');
+  if (icon) {
+    icon.className = theme === 'dark' ? 'bi bi-sun fs-6' : 'bi bi-moon fs-6';
+  }
 }
 initTheme();
 initUserDropdown();
