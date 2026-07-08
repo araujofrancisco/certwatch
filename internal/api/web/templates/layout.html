@@ -9,7 +9,7 @@
 </head>
 <body>
   <nav class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
-    <button class="navbar-toggler d-lg-none position-absolute" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu">
+    <button class="navbar-toggler d-lg-none position-absolute" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasSidebar" aria-controls="offcanvasSidebar">
       <span class="navbar-toggler-icon"></span>
     </button>
     <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="/dashboard">CertWatch</a>
@@ -33,13 +33,25 @@
     </div>
   </nav>
   <div class="container-fluid">
-    <div class="row flex-lg-nowrap">
-      <nav id="sidebarMenu" class="offcanvas offcanvas-start offcanvas-lg bg-light sidebar" tabindex="-1" aria-labelledby="sidebarLabel">
-        <div class="offcanvas-header d-lg-none">
-          <h5 class="offcanvas-title" id="sidebarLabel">CertWatch</h5>
+    <div class="row">
+      <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-none d-lg-block bg-light sidebar">
+        <div class="position-sticky pt-3">
+          <ul class="nav flex-column">
+            <li class="nav-item"><a class="nav-link{{if eq .Active "dashboard"}} active{{end}}" href="/dashboard">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link{{if eq .Active "domains"}} active{{end}}" href="/domains">Domains</a></li>
+            <li class="nav-item"><a class="nav-link{{if eq .Active "certificates"}} active{{end}}" href="/certificates">Certificates</a></li>
+            <li class="nav-item"><a class="nav-link{{if eq .Active "import"}} active{{end}}" href="/import">Import</a></li>
+            <li class="nav-item"><a class="nav-link{{if eq .Active "reports"}} active{{end}}" href="/reports">Reports</a></li>
+            <li class="nav-item"><a class="nav-link{{if eq .Active "settings"}} active{{end}}" href="/settings">Settings</a></li>
+          </ul>
+        </div>
+      </nav>
+      <nav class="offcanvas offcanvas-start d-lg-none" tabindex="-1" id="offcanvasSidebar" aria-labelledby="offcanvasSidebarLabel">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title" id="offcanvasSidebarLabel">CertWatch</h5>
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
         </div>
-        <div class="offcanvas-body p-0 pt-3">
+        <div class="offcanvas-body">
           <ul class="nav flex-column">
             <li class="nav-item"><a class="nav-link{{if eq .Active "dashboard"}} active{{end}}" href="/dashboard" onclick="closeOffcanvas()">Dashboard</a></li>
             <li class="nav-item"><a class="nav-link{{if eq .Active "domains"}} active{{end}}" href="/domains" onclick="closeOffcanvas()">Domains</a></li>
@@ -50,7 +62,7 @@
           </ul>
         </div>
       </nav>
-      <main class="col px-md-4 min-width-0">
+      <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
         {{template "page" .}}
       </main>
     </div>

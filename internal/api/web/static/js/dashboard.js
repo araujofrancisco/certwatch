@@ -79,7 +79,7 @@ function initUserDropdown() {
 }
 
 function closeOffcanvas() {
-  var el = document.getElementById('sidebarMenu');
+  var el = document.getElementById('offcanvasSidebar');
   if (el && el.classList.contains('show')) {
     var offcanvas = bootstrap.Offcanvas.getInstance(el);
     if (offcanvas) offcanvas.hide();
