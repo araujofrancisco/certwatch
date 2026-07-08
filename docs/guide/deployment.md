@@ -46,7 +46,7 @@ The included `docker-compose.yml` configures:
 - **SQLite**: Default. Back up the `.db` file. Not suitable for concurrent write-heavy workloads. Use a persistent volume in Docker.
 
 ### Environment
-- Timezone defaults to America/New_York for digest scheduling (configurable per profile)
+- Digest schedules use the profile's `timezone` field (default: America/New_York)
 - Log in JSON format (`CERTWATCH_LOGGING_FORMAT=json`) for production to integrate with log aggregators
 - Use environment variables for secrets (never commit them)
 - Override `CERTWATCH_AUTH_SECRET` with a strong random value — the binary warns on startup if the default is detected
@@ -137,7 +137,7 @@ Add to crontab for daily automated backups:
 - The container uses a multi-stage scratch build (no shell, no package manager)
 - All input is validated: domain format, email format, request body size (1 MB limit)
 - Rate limiting on auth endpoints (10 req/min per IP, sliding window, port-stripped)
-- CORS restricted to configurable origins (default `http://localhost:8080`) — set `CERTWATCH_SERVER_CORS_ORIGINS` for custom domains
+- CORS restricted to configurable origins (default `http://localhost:8080`, `http://127.0.0.1:8080`) — set `CERTWATCH_SERVER_CORS_ORIGINS` for custom domains
 - Security headers sent on all responses: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
 - Password minimum 8 characters on registration
 - Input length limits: description ≤500, group ≤100

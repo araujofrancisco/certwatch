@@ -280,8 +280,13 @@ func runNotifications(ctx context.Context, cfg config.Config, domainSvc *service
 			slog.Error("parse cron for profile", "name", profile.Name, "error", err)
 			continue
 		}
-		loc, _ := time.LoadLocation("America/New_York")
-		if loc == nil {
+		locName := profile.Timezone
+		if locName == "" {
+			locName = "America/New_York"
+		}
+		loc, err := time.LoadLocation(locName)
+		if err != nil {
+			slog.Warn("invalid timezone, falling back to America/New_York", "profile", profile.Name, "timezone", locName)
 			loc = time.FixedZone("America/New_York", -5*60*60)
 		}
 		sched.Add(&scheduler.Job{

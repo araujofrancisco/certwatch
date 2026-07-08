@@ -39,12 +39,12 @@
 
 **Goal:** Production readiness, observability, basic API completeness.
 
-### 10.1 WAL mode
+### 10.1 WAL mode ✅
 
-**Why:** One-line change with immediate performance impact. Enables concurrent reads during background scans without blocking.
+**Status:** Implemented in `database/database.go:33`.
 
-- Add `PRAGMA journal_mode=WAL` in `database.Open()` after the initial ping
-- Document that SQLite is the supported database and WAL mode is enabled by default
+- `PRAGMA journal_mode=WAL` applied on every connection after ping
+- Enables concurrent reads during background scans without blocking
 
 ### 10.2 Pre-built Docker images
 
@@ -93,24 +93,21 @@
 - Include in list/get certificate API responses
 - Display in web UI certificate detail (add SAN list below subject/issuer)
 
-### 10.6 Version endpoint
+### 10.6 Version endpoint ✅
 
-**Why:** Automation scripts need to check API compatibility.
+**Status:** Implemented at `GET /api/version` (no auth required).
 
-- `GET /api/version` → `{"version": "0.1.0", "build": "<commit-sha>"}`
-- No auth required (same as `/health`)
-- Version injected via `-ldflags="-X main.version=$(git describe --tags --always)"` in Makefile
+- Returns `{"version": "0.1.0"}`
+- Version constant in `internal/api/api.go`
+- Future: inject commit SHA via `-ldflags`
 
-### 10.7 Pagination + sorting
+### 10.7 Pagination + sorting (partial ✅)
 
-**Why:** Current list endpoints return all results unbounded. A user with 10k domains gets a single 10 MB JSON response.
+**Status:** Basic pagination implemented (25 default, configurable via `?page=&limit=`). Remaining items:
 
-- Query params: `?limit=50&offset=0` (max 1000, default 100)
-- `?sort_by=not_after&order=asc` with whitelist of allowed columns:
-  - Domains: `domain`, `created_at`, `updated_at`, `group`, `enabled`
-  - Certs: `not_after`, `not_before`, `last_checked`, `created_at`, `status`, `protocol`
-- Response: `X-Total-Count` header + `Link` header (RFC 8288)
-- Repository layer: filter structs gain `Limit`, `Offset`, `SortBy`, `SortOrder`
+- `?sort_by=` and `?order=` with whitelisted columns
+- `X-Total-Count` and `Link` response headers (RFC 8288)
+- Repository filter `Offset` support
 
 ### 10.8 Detailed health endpoint
 

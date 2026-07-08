@@ -67,6 +67,7 @@ type ProfileConfig struct {
 	SendAt     string   `yaml:"send_at,omitempty"`
 	Day        string   `yaml:"day,omitempty"`
 	Cron       string   `yaml:"cron,omitempty"`
+	Timezone   string   `yaml:"timezone,omitempty"`
 }
 
 func Default() Config {
@@ -102,8 +103,8 @@ func Default() Config {
 			},
 			Profiles: []ProfileConfig{
 				{Name: "Operations", Enabled: true, Type: "immediate", Recipients: []string{"ops@example.com"}, Thresholds: []int{30, 14, 7, 3, 1}},
-				{Name: "Management", Enabled: true, Type: "daily-digest", Recipients: []string{"manager@example.com"}, SendAt: "08:00"},
-				{Name: "Security", Enabled: true, Type: "weekly-digest", Recipients: []string{"security@example.com"}, SendAt: "09:00", Day: "Monday"},
+				{Name: "Management", Enabled: true, Type: "daily-digest", Recipients: []string{"manager@example.com"}, SendAt: "08:00", Timezone: "America/New_York"},
+				{Name: "Security", Enabled: true, Type: "weekly-digest", Recipients: []string{"security@example.com"}, SendAt: "09:00", Day: "Monday", Timezone: "America/New_York"},
 			},
 		},
 	}

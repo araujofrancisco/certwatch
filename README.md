@@ -27,7 +27,7 @@ CertWatch discovers certificates across multiple protocols, tracks expiry dates,
 ## Quick start
 
 ```bash
-make test       # 84+ tests, all pass
+make test       # 146+ tests, all pass
 make build      # static binary → build/certwatch
 make run        # start on :8080
 ```
@@ -67,7 +67,7 @@ discovery:
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
 | 1 — Foundation | ✅ Complete | Go scaffold, Docker, SQLite, config, logging, CI |
-| 2 — Backend | ✅ Complete | REST API, JWT auth, CRUD, scanners, 84+ tests |
+| 2 — Backend | ✅ Complete | REST API, JWT auth, CRUD, scanners, 146+ tests |
 | 3 — Web UI | ✅ Complete | Bootstrap 5 dashboard, 7 pages, Go embed |
 | 4 — Notification | ✅ Complete | SMTP alerts, daily/weekly digests, cron scheduler |
 | 5 — Reports | ✅ Complete | Inventory API + UI with summary cards, filters, export |
@@ -139,5 +139,5 @@ RL = rate-limited (10 req/min per IP)
 
 - **Language**: Go 1.25+
 - **Database**: SQLite (pure Go via modernc.org/sqlite, no CGO)
-- **UI**: Bootstrap 5 served via Go embed (no build step required), 10 HTML templates
+- **UI**: Bootstrap 5 served via Go embed (no build step required), 11 HTML templates
 - **Deployment**: Docker (multi-stage scratch), Docker Compose

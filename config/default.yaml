@@ -43,6 +43,7 @@ notifications:
       recipients:
         - manager@example.com
       send_at: "08:00"
+      timezone: "America/New_York"
     - name: Security
       enabled: true
       type: weekly-digest
@@ -50,3 +51,4 @@ notifications:
         - security@example.com
       send_at: "09:00"
       day: Monday
+      timezone: "America/New_York"

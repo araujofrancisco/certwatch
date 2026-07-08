@@ -28,7 +28,7 @@ server:
   port: 8080             # listen port
 
 database:
-  driver: sqlite         # sqlite only (postgres planned)
+  driver: sqlite         # sqlite only
   dsn: "certwatch.db"
 
 logging:
@@ -76,7 +76,7 @@ notifications:
 ### Security
 
 - **Security headers**: All responses include CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy, X-XSS-Protection.
-- **CORS**: Configurable allowed origins via `server.cors_allowed_origins` (YAML) or `CERTWATCH_SERVER_CORS_ORIGINS` (comma-separated). Default: `http://localhost:8080`.
+- **CORS**: Configurable allowed origins via `server.cors_allowed_origins` (YAML) or `CERTWATCH_SERVER_CORS_ORIGINS` (comma-separated). Default: `http://localhost:8080`, `http://127.0.0.1:8080`.
 - **Rate limiting**: Auth endpoints are limited to 10 req/min per IP (sliding window, port-stripped).
 - **Password policy**: Minimum 8 characters on registration.
 - **Input limits**: Request body 1 MB max; description ≤500 chars; group ≤100 chars.
@@ -89,7 +89,7 @@ notifications:
 | `CERTWATCH_CONFIG` | Config file path | `config/default.yaml` |
 | `CERTWATCH_SERVER_HOST` | `server.host` | `0.0.0.0` |
 | `CERTWATCH_SERVER_PORT` | `server.port` | `8080` |
-| `CERTWATCH_SERVER_CORS_ORIGINS` | `server.cors_allowed_origins` | `http://localhost:8080` |
+| `CERTWATCH_SERVER_CORS_ORIGINS` | `server.cors_allowed_origins` | `http://localhost:8080`, `http://127.0.0.1:8080` |
 | `CERTWATCH_DATABASE_DRIVER` | `database.driver` | `sqlite` |
 | `CERTWATCH_DATABASE_DSN` | `database.dsn` | `certwatch.db` |
 | `CERTWATCH_LOGGING_LEVEL` | `logging.level` | `info` |
@@ -252,7 +252,7 @@ open http://localhost:8080/api/docs
 curl http://localhost:8080/api/docs/openapi.yaml
 ```
 
-The OpenAPI spec at `internal/api/openapi.yaml` covers all 15 REST endpoints with 26 schemas, request/response examples, and authentication flow. The Scalar UI lets you explore endpoints interactively and try them with live requests.
+The OpenAPI spec at `internal/api/openapi.yaml` covers all REST endpoints with 26 schemas, request/response examples, and authentication flow. The Scalar UI lets you explore endpoints interactively and try them with live requests.
 
 ## Web UI
 
@@ -301,7 +301,7 @@ The binary also supports a `-health` flag for Docker health checks:
 
 ## Background scans
 
-The server periodically scans all enabled domains for certificates. The interval is configured via `discovery.scan_interval` (default: 6h). Scans are sequential — each protocol is tried in priority order (HTTPS → CT → stubs) with per-scanner timeouts. The first successful scan result is saved; if all fail, an error certificate is created.
+The server periodically scans all enabled domains for certificates. The interval is configured via `discovery.scan_interval` (default: 6h). Up to 10 domains are scanned concurrently via semaphore. Each domain is scanned sequentially — protocols are tried in priority order (HTTPS → CT) with per-scanner timeouts. The first successful scan result is saved; if all fail, an error certificate is created.
 
 Scans are also triggered:
 - Automatically on domain creation (`POST /api/domains`)
@@ -315,6 +315,6 @@ Notifications are configured entirely via YAML. When SMTP is configured (host no
 - Sends daily summaries at the configured `send_at` time (daily-digest profiles)
 - Sends weekly reports at the configured day and time (weekly-digest profiles)
 
-All schedules use `America/New_York` timezone. If SMTP is not configured, notifications are skipped with a log warning.
+Digest schedules use the profile's `timezone` field (default: `America/New_York`). If SMTP is not configured, notifications are skipped with a log warning.
 
 Set `smtp.force_tls: true` to require an explicit TLS connection to the SMTP server before authentication (recommended for public SMTP servers).

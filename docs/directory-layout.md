@@ -22,7 +22,7 @@ certwatch/
 │   │   ├── reports.go        ✅ Inventory report API (Phase 5)
 │   │   ├── ui.go             ✅ Go embed UI handler with per-page templates
 │   │   └── web/
-│   │       ├── templates/    ✅ 11 HTML pages (Bootstrap 5) — added import.html, docs.html, group+tags fields
+│   │       ├── templates/    ✅ 11 HTML templates (Bootstrap 5) — 9 pages, 2 layouts, plus raw docs.html
 │   │       │   ├── layout.html / dashboard.html / domains.html / domain-detail.html
 │   │       │   ├── certificates.html / reports.html / import.html
 │   │       │   ├── auth-layout.html / login.html / register.html
