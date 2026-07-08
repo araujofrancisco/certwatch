@@ -1,6 +1,55 @@
 body {
   font-size: .875rem;
 }
+
+/* ─── App Navbar ─────────────────────────────── */
+.app-navbar {
+  min-height: 56px;
+}
+.app-navbar .search-input {
+  max-width: 360px;
+  min-width: 120px;
+}
+.app-navbar .nav-link {
+  color: rgba(255,255,255,.7);
+  border-radius: 6px;
+  transition: color .15s, background-color .15s;
+}
+.app-navbar .nav-link:hover,
+.app-navbar .nav-link:focus {
+  color: #fff;
+  background-color: rgba(255,255,255,.1);
+}
+.app-navbar .nav-link.dropdown-toggle::after {
+  display: none;
+}
+.app-navbar .dropdown-menu {
+  margin-top: 8px;
+  border: 0;
+  border-radius: 8px;
+  min-width: 200px;
+}
+.app-navbar .dropdown-item {
+  display: flex;
+  align-items: center;
+  font-size: .875rem;
+}
+[data-bs-theme="dark"] .app-navbar .dropdown-menu {
+  background-color: #1a1d21;
+}
+[data-bs-theme="dark"] .app-navbar .dropdown-item {
+  color: #adb5bd;
+}
+[data-bs-theme="dark"] .app-navbar .dropdown-item:hover {
+  background-color: rgba(255,255,255,.05);
+  color: #fff;
+}
+
+@media (max-width: 575.98px) {
+  .app-navbar .search-input {
+    max-width: 8rem;
+  }
+}
 .feather {
   width: 16px;
   height: 16px;
@@ -100,25 +149,22 @@ body {
 
 /* User avatar circle */
 .avatar-circle {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background-color: #6c757d;
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: .8rem;
+  font-size: .85rem;
   font-weight: 700;
   text-transform: uppercase;
+  outline: 2px solid rgba(255,255,255,.15);
+  outline-offset: -1px;
 }
 
-/* Mobile search - reduce width on small screens */
-@media (max-width: 575.98px) {
-  #globalSearch {
-    width: 8rem !important;
-  }
-}
+
 
 .empty-state {
   text-align: center;
