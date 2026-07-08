@@ -134,6 +134,8 @@ RL = rate-limited (10 req/min per IP)
 - [Troubleshooting](docs/guide/troubleshooting.md) — common issues and fixes
 - [Architecture](docs/architecture.md) — layer diagram and conventions
 - [Audit report](docs/audit-report.md) — security review, 28/28 issues fixed
+- [Roadmap](docs/roadmap.md) — planned features for phases 10–13
+- [Improvements](docs/improvements.md) — architectural review with 45 proposed improvements (P0–P3)
 
 ## Stack
 

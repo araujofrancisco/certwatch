@@ -55,6 +55,7 @@ certwatch/
 ├── backups/                  ⬜ Backup archives (created by backup.sh)
 ├── config/                   ✅ Default YAML config with all sections
 ├── docs/                     ✅ Documentation — start at _index.md
+│   ├── improvements.md       ✅ Architectural review with 45 proposed improvements
 ├── .github/workflows/        ✅ CI pipeline (lint → test → build → tidy)
 ├── Dockerfile                ✅ Multi-stage scratch build
 ├── docker-compose.yml        ✅ App + SQLite volume + healthcheck

@@ -63,3 +63,4 @@ OpenAPI 3.0 spec at `internal/api/openapi.yaml`. Interactive Scalar UI at `GET /
 - `docs/architecture.md` — layer diagram, scanner design, security
 - `docs/audit-report.md` — security audit, 28/28 issues fixed
 - `docs/roadmap.md` — planned phases 10–13
+- `docs/improvements.md` — architectural review with 45 proposed improvements (P0–P3)
