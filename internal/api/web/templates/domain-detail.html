@@ -5,6 +5,7 @@
     <button class="btn btn-outline-secondary" onclick="editDomain({{.Domain.ID}})">Edit</button>
     <button class="btn btn-primary" onclick="scanDomain({{.Domain.ID}})">Scan Now</button>
     <button class="btn btn-outline-warning" onclick="purgeDomainErrors({{.Domain.ID}})">Purge Errors</button>
+    <button class="btn btn-outline-danger" onclick="purgeDomainExpired({{.Domain.ID}})">Purge Expired</button>
     <button class="btn btn-outline-danger" onclick="deleteDomain({{.Domain.ID}})">Delete</button>
   </div>
 </div>
@@ -103,6 +104,13 @@ async function purgeDomainErrors(id) {
   if (!ok) return;
   const data = await apiFetch('/api/domains/' + id + '/certificates/errors', {method: 'DELETE'});
   showToast('Purged ' + (data ? data.deleted : 0) + ' error certificates', 'success');
+  loadCertificates();
+}
+async function purgeDomainExpired(id) {
+  const ok = await showConfirm('Purge Expired', 'Delete all expired certificates for this domain?');
+  if (!ok) return;
+  const data = await apiFetch('/api/domains/' + id + '/certificates/expired', {method: 'DELETE'});
+  showToast('Purged ' + (data ? data.deleted : 0) + ' expired certificates', 'success');
   loadCertificates();
 }
 async function editDomain(id) {

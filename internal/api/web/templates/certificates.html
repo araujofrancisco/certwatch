@@ -3,6 +3,7 @@
   <h1 class="h2">Certificates</h1>
   <div>
     <button class="btn btn-outline-warning" onclick="purgeAllErrors()">Purge All Errors</button>
+    <button class="btn btn-outline-danger" onclick="purgeAllExpired()">Purge Expired</button>
   </div>
 </div>
 <div class="row mb-3 g-2">
@@ -139,6 +140,15 @@ async function purgeAllErrors() {
   const data = await apiFetch('/api/certificates/errors', {method: 'DELETE'});
   if (data) {
     showToast('Deleted ' + data.deleted + ' error certificate(s)', 'success');
+    loadCertificates();
+  }
+}
+async function purgeAllExpired() {
+  const ok = await showConfirm('Purge Expired', 'Delete all expired certificates across all domains?');
+  if (!ok) return;
+  const data = await apiFetch('/api/certificates/expired', {method: 'DELETE'});
+  if (data) {
+    showToast('Deleted ' + data.deleted + ' expired certificate(s)', 'success');
     loadCertificates();
   }
 }

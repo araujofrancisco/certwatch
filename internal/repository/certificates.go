@@ -185,6 +185,24 @@ func (r *certRepo) DeleteErrors() (int64, error) {
 	return n, nil
 }
 
+func (r *certRepo) DeleteExpired() (int64, error) {
+	res, err := r.db.Exec(`DELETE FROM certificates WHERE not_after < datetime('now')`)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired certificates: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func (r *certRepo) DeleteExpiredByDomain(domainID int64) (int64, error) {
+	res, err := r.db.Exec(`DELETE FROM certificates WHERE domain_id = ? AND not_after < datetime('now')`, domainID)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired certificates by domain: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 func (r *certRepo) DeleteErrorsByDomain(domainID int64) (int64, error) {
 	res, err := r.db.Exec(`DELETE FROM certificates WHERE domain_id = ? AND status = 'error'`, domainID)
 	if err != nil {

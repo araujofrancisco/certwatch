@@ -479,6 +479,35 @@ paths:
               example:
                 error: failed to purge certificate errors
 
+  /api/certificates/expired:
+    delete:
+      tags: [Certificates]
+      summary: Purge all expired certificates
+      description: |
+        Deletes all certificates whose `not_after` is in the past across all domains.
+        This runs automatically after each background scan, and is triggered per-domain
+        when a certificate renewal is detected. Use this endpoint for manual cleanup.
+      operationId: purgeExpiredCertificates
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Purge result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteCountResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: failed to purge expired certificates
+
   /api/domains/{id}/certificates:
     get:
       tags: [Certificates]
@@ -554,6 +583,43 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error: failed to purge certificate errors
+
+  /api/domains/{id}/certificates/expired:
+    delete:
+      tags: [Certificates]
+      summary: Purge expired certificates for a domain
+      description: |
+        Deletes all certificates whose `not_after` is in the past for a specific domain.
+      operationId: purgeDomainExpiredCertificates
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/domainId"
+      responses:
+        "200":
+          description: Purge result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteCountResponse"
+        "400":
+          description: Invalid domain ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: invalid domain id
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: failed to purge expired certificates
 
   /api/reports/inventory:
     get:

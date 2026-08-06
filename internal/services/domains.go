@@ -277,6 +277,16 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 	if err := s.certs.Create(cert); err != nil {
 		slog.Error("failed to save certificate", "domain_id", domainID, "error", err)
 	}
+
+	// Renewal detected — a new certificate was saved and the latest cert
+	// changed. Automatically remove any old expired certificates for this
+	// domain so they don't accumulate across renewal cycles.
+	if n, err := s.certs.DeleteExpiredByDomain(domainID); err != nil {
+		slog.Error("failed to purge expired certificates on renewal", "domain_id", domainID, "error", err)
+	} else if n > 0 {
+		slog.Info("purged expired certificates on renewal", "domain_id", domainID, "deleted", n)
+	}
+
 	return cert
 }
 

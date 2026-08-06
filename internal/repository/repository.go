@@ -38,6 +38,8 @@ type CertificateRepository interface {
 	Delete(id int64) error
 	DeleteErrors() (int64, error)
 	DeleteErrorsByDomain(domainID int64) (int64, error)
+	DeleteExpired() (int64, error)
+	DeleteExpiredByDomain(domainID int64) (int64, error)
 }
 
 type NotificationProfileRepository interface {

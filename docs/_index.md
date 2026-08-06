@@ -2,7 +2,7 @@
 
 Project: **CertWatch** — lightweight, self-hosted SSL certificate inventory and expiration monitoring.
 
-Status: **Phases 1–9 implemented** (Go backend, REST API, JWT auth, SQLite, HTTPS+CT scanners, Bootstrap 5 web UI, cron notifications, inventory reports, backup/restore scripts, bulk import, groups, tags, domain update, OpenAPI docs, 84 tests pass). Security audit completed — **28/28 issues fixed**.
+Status: **Phases 1–9 implemented** (Go backend, REST API, JWT auth, SQLite, HTTPS+CT scanners, Bootstrap 5 web UI, cron notifications, inventory reports, backup/restore scripts, bulk import, groups, tags, domain update, OpenAPI docs, 146 tests pass). Security audit completed — **28/28 issues fixed**.
 
 ## Quick nav
 
@@ -16,3 +16,4 @@ Status: **Phases 1–9 implemented** (Go backend, REST API, JWT auth, SQLite, HT
 | [openapi.yaml](../internal/api/openapi.yaml) | ✅ Complete | OpenAPI 3.0 spec for all 15 REST endpoints |
 | [audit-report.md](audit-report.md) | ✅ Complete | Security audit, 28/28 fixes applied |
 | [roadmap.md](roadmap.md) | ⬜ Planned | Phases 10–13: audit log, API keys, webhooks, metrics, multi-tenant, Helm, MCP |
+| [improvements.md](improvements.md) | ✅ Complete | Architectural review: 45 proposed improvements across 7 categories with priorities |

@@ -45,6 +45,14 @@ func (s *CertificateService) GetCertificate(id int64) (*models.Certificate, erro
 	return s.certs.FindByID(id)
 }
 
+func (s *CertificateService) PurgeExpired() (int64, error) {
+	return s.certs.DeleteExpired()
+}
+
+func (s *CertificateService) PurgeExpiredByDomain(domainID int64) (int64, error) {
+	return s.certs.DeleteExpiredByDomain(domainID)
+}
+
 func (s *CertificateService) ExpiringCertificates(thresholdDays int) ([]*models.Certificate, error) {
 	all, err := s.certs.List()
 	if err != nil {
