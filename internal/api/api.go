@@ -14,46 +14,48 @@ import (
 const Version = "0.1.0"
 
 type Handler struct {
-	domains     *services.DomainService
-	certs       *services.CertificateService
-	authSvc     *services.AuthService
-	authN       *auth.Authenticator
-	db          *sql.DB
-	rateLimiter *middleware.RateLimiter
+	domains       *services.DomainService
+	certs         *services.CertificateService
+	authSvc       *services.AuthService
+	authN         *auth.Authenticator
+	db            *sql.DB
+	rateLimiter   *middleware.RateLimiter
+	readLimiter   *middleware.RateLimiter
 }
 
-func NewHandler(domains *services.DomainService, certs *services.CertificateService, authSvc *services.AuthService, authN *auth.Authenticator, db *sql.DB, rateLimiter *middleware.RateLimiter) *Handler {
-	return &Handler{domains: domains, certs: certs, authSvc: authSvc, authN: authN, db: db, rateLimiter: rateLimiter}
+func NewHandler(domains *services.DomainService, certs *services.CertificateService, authSvc *services.AuthService, authN *auth.Authenticator, db *sql.DB, rateLimiter, readLimiter *middleware.RateLimiter) *Handler {
+	return &Handler{domains: domains, certs: certs, authSvc: authSvc, authN: authN, db: db, rateLimiter: rateLimiter, readLimiter: readLimiter}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	authMiddleware := middleware.Auth(h.authN)
 	rateLimit := middleware.RateLimit(h.rateLimiter)
+	readLimit := middleware.RateLimit(h.readLimiter)
 
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /api/version", h.version)
 
 	mux.Handle("POST /api/auth/register", rateLimit(http.HandlerFunc(h.register)))
 	mux.Handle("POST /api/auth/login", rateLimit(http.HandlerFunc(h.login)))
-	mux.Handle("PUT /api/auth/password", authMiddleware(http.HandlerFunc(h.changePassword)))
+	mux.Handle("PUT /api/auth/password", rateLimit(authMiddleware(http.HandlerFunc(h.changePassword))))
 
-	mux.Handle("GET /api/domains", authMiddleware(http.HandlerFunc(h.listDomains)))
-	mux.Handle("POST /api/domains/import", authMiddleware(http.HandlerFunc(h.importDomains)))
-	mux.Handle("POST /api/domains", authMiddleware(http.HandlerFunc(h.createDomain)))
-	mux.Handle("GET /api/domains/{id}", authMiddleware(http.HandlerFunc(h.getDomain)))
-	mux.Handle("PUT /api/domains/{id}", authMiddleware(http.HandlerFunc(h.updateDomain)))
-	mux.Handle("DELETE /api/domains/{id}", authMiddleware(http.HandlerFunc(h.deleteDomain)))
-	mux.Handle("POST /api/domains/{id}/scan", authMiddleware(http.HandlerFunc(h.scanDomain)))
+	mux.Handle("GET /api/domains", readLimit(authMiddleware(http.HandlerFunc(h.listDomains))))
+	mux.Handle("POST /api/domains/import", rateLimit(authMiddleware(http.HandlerFunc(h.importDomains))))
+	mux.Handle("POST /api/domains", rateLimit(authMiddleware(http.HandlerFunc(h.createDomain))))
+	mux.Handle("GET /api/domains/{id}", readLimit(authMiddleware(http.HandlerFunc(h.getDomain))))
+	mux.Handle("PUT /api/domains/{id}", rateLimit(authMiddleware(http.HandlerFunc(h.updateDomain))))
+	mux.Handle("DELETE /api/domains/{id}", rateLimit(authMiddleware(http.HandlerFunc(h.deleteDomain))))
+	mux.Handle("POST /api/domains/{id}/scan", rateLimit(authMiddleware(http.HandlerFunc(h.scanDomain))))
 
-	mux.Handle("GET /api/certificates", authMiddleware(http.HandlerFunc(h.listCertificates)))
-	mux.Handle("DELETE /api/certificates/errors", authMiddleware(http.HandlerFunc(h.purgeCertificateErrors)))
-	mux.Handle("DELETE /api/certificates/expired", authMiddleware(http.HandlerFunc(h.purgeExpiredCertificates)))
-	mux.Handle("GET /api/domains/{id}/certificates", authMiddleware(http.HandlerFunc(h.listDomainCertificates)))
-	mux.Handle("DELETE /api/domains/{id}/certificates/errors", authMiddleware(http.HandlerFunc(h.purgeDomainCertificateErrors)))
-	mux.Handle("DELETE /api/domains/{id}/certificates/expired", authMiddleware(http.HandlerFunc(h.purgeDomainExpiredCertificates)))
+	mux.Handle("GET /api/certificates", readLimit(authMiddleware(http.HandlerFunc(h.listCertificates))))
+	mux.Handle("DELETE /api/certificates/errors", rateLimit(authMiddleware(http.HandlerFunc(h.purgeCertificateErrors))))
+	mux.Handle("DELETE /api/certificates/expired", rateLimit(authMiddleware(http.HandlerFunc(h.purgeExpiredCertificates))))
+	mux.Handle("GET /api/domains/{id}/certificates", readLimit(authMiddleware(http.HandlerFunc(h.listDomainCertificates))))
+	mux.Handle("DELETE /api/domains/{id}/certificates/errors", rateLimit(authMiddleware(http.HandlerFunc(h.purgeDomainCertificateErrors))))
+	mux.Handle("DELETE /api/domains/{id}/certificates/expired", rateLimit(authMiddleware(http.HandlerFunc(h.purgeDomainExpiredCertificates))))
 
-	mux.Handle("GET /api/dashboard", authMiddleware(http.HandlerFunc(h.dashboard)))
-	mux.Handle("GET /api/reports/inventory", authMiddleware(http.HandlerFunc(h.inventoryReport)))
+	mux.Handle("GET /api/dashboard", readLimit(authMiddleware(http.HandlerFunc(h.dashboard))))
+	mux.Handle("GET /api/reports/inventory", readLimit(authMiddleware(http.HandlerFunc(h.inventoryReport))))
 
 	h.RegisterUIRoutes(mux)
 	h.RegisterDocsRoutes(mux)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -46,11 +47,12 @@ func setupAPI(t *testing.T) (*Handler, *auth.Authenticator, string) {
 	scannerReg.Register(discovery.NewHTTPSScanner(5 * time.Second))
 
 	authSvc := services.NewAuthService(userRepo, authenticator)
-	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo)
+	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, context.Background())
 	certSvc := services.NewCertificateService(certRepo, domainRepo)
 
 	rl := middleware.NewRateLimiter(100, time.Minute)
-	handler := NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rl)
+	readRL := middleware.NewRateLimiter(1000, time.Minute)
+	handler := NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rl, readRL)
 
 	token, _ := authenticator.GenerateToken(1, "admin@test.com")
 	return handler, authenticator, token

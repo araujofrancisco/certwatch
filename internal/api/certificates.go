@@ -7,6 +7,8 @@ import (
 	"github.com/araujofrancisco/certwatch/internal/models"
 )
 
+const maxPageSize = 100
+
 func (h *Handler) listCertificates(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -37,6 +39,9 @@ func (h *Handler) listCertificates(w http.ResponseWriter, r *http.Request) {
 		f.Page = page
 	}
 	if limit, err := strconv.Atoi(q.Get("limit")); err == nil && limit > 0 {
+		if limit > maxPageSize {
+			limit = maxPageSize
+		}
 		f.Limit = limit
 	}
 

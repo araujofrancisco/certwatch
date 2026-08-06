@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -32,12 +33,16 @@ func Open(driver, dsn string) (*DB, error) {
 		pragmas := []string{
 			"PRAGMA journal_mode=WAL",
 			"PRAGMA busy_timeout=5000",
+			"PRAGMA foreign_keys = ON",
 		}
 		for _, p := range pragmas {
 			if _, err := db.Exec(p); err != nil {
 				return nil, fmt.Errorf("%s: %w", p, err)
 			}
 		}
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
+		db.SetConnMaxLifetime(time.Hour)
 	}
 
 	slog.Info("database connected", "driver", driver)

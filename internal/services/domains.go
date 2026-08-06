@@ -242,6 +242,10 @@ func (s *DomainService) ensureTags(names []string) ([]*models.Tag, error) {
 	return result, nil
 }
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 func randomTagColor() string {
 	palette := []string{
 		"#0d6efd", "#6610f2", "#6f42c1", "#d63384", "#dc3545",
@@ -390,7 +394,7 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 		res.Status = "created"
 
 		go func(id int64) {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(s.backgroundCtx, 30*time.Second)
 			defer cancel()
 			if _, err := s.ScanDomain(ctx, id, 30*time.Second); err != nil {
 				slog.Error("bulk import background scan failed", "domain_id", id, "error", err)

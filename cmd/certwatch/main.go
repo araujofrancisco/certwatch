@@ -120,11 +120,16 @@ func run() error {
 	tagRepo := repository.NewTagRepository(db)
 
 	authSvc := services.NewAuthService(userRepo, authenticator)
-	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, ctx)
 	certSvc := services.NewCertificateService(certRepo, domainRepo)
 
 	rateLimiter := middleware.NewRateLimiter(10, time.Minute)
-	handler := api.NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rateLimiter)
+	readRateLimiter := middleware.NewRateLimiter(300, time.Minute) // Higher limit for GET requests
+	handler := api.NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rateLimiter, readRateLimiter)
 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
@@ -148,9 +153,6 @@ func run() error {
 		scanInterval = 6 * time.Hour
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
 		slog.Info("listening", "addr", cfg.ServerAddr())
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -167,7 +169,11 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	return srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("shutdown error", "error", err)
+	}
+	rateLimiter.Stop()
+	return nil
 }
 
 func runBackgroundScan(ctx context.Context, svc *services.DomainService, certSvc *services.CertificateService, timeout, interval time.Duration) {

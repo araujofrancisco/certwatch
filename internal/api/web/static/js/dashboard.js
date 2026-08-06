@@ -182,6 +182,10 @@ async function apiFetch(url, opts) {
       window.location.href = '/login';
       return null;
     }
+    if (res.status === 429) {
+      console.warn('Rate limited, please wait before retrying');
+      return null;
+    }
     const text = await res.text();
     if (!text) return res.ok ? {} : null;
     try { return JSON.parse(text); }

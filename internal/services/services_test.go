@@ -38,7 +38,7 @@ func setupServices(t *testing.T) (*DomainService, *CertificateService, *AuthServ
 	scannerReg := discovery.NewRegistry()
 	scannerReg.Register(discovery.NewHTTPSScanner(0))
 
-	return NewDomainService(domainRepo, certRepo, scannerReg, tagRepo),
+	return NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, context.Background()),
 		NewCertificateService(certRepo, domainRepo),
 		NewAuthService(userRepo, nil)
 }

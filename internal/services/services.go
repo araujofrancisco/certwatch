@@ -1,16 +1,19 @@
 package services
 
 import (
+	"context"
+
 	"github.com/araujofrancisco/certwatch/internal/auth"
 	"github.com/araujofrancisco/certwatch/internal/discovery"
 	"github.com/araujofrancisco/certwatch/internal/repository"
 )
 
 type DomainService struct {
-	domains  repository.DomainRepository
-	certs    repository.CertificateRepository
-	scanners *discovery.Registry
-	tags     repository.TagRepository
+	domains       repository.DomainRepository
+	certs         repository.CertificateRepository
+	scanners      *discovery.Registry
+	tags          repository.TagRepository
+	backgroundCtx context.Context
 }
 
 type CertificateService struct {
@@ -23,8 +26,8 @@ type AuthService struct {
 	auth  *auth.Authenticator
 }
 
-func NewDomainService(domains repository.DomainRepository, certs repository.CertificateRepository, scanners *discovery.Registry, tags repository.TagRepository) *DomainService {
-	return &DomainService{domains: domains, certs: certs, scanners: scanners, tags: tags}
+func NewDomainService(domains repository.DomainRepository, certs repository.CertificateRepository, scanners *discovery.Registry, tags repository.TagRepository, backgroundCtx context.Context) *DomainService {
+	return &DomainService{domains: domains, certs: certs, scanners: scanners, tags: tags, backgroundCtx: backgroundCtx}
 }
 
 func NewCertificateService(certs repository.CertificateRepository, domains repository.DomainRepository) *CertificateService {

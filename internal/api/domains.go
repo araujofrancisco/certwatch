@@ -45,6 +45,9 @@ func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
 		f.Page = page
 	}
 	if limit, err := strconv.Atoi(q.Get("limit")); err == nil && limit > 0 {
+		if limit > maxPageSize {
+			limit = maxPageSize
+		}
 		f.Limit = limit
 	}
 
@@ -81,7 +84,7 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func(id int64) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 		if _, err := h.domains.ScanDomain(ctx, id, 30*time.Second); err != nil {
 			slog.Error("background scan failed", "domain_id", id, "error", err)
