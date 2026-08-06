@@ -115,3 +115,27 @@ func (h *Handler) purgeDomainCertificateErrors(w http.ResponseWriter, r *http.Re
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
 }
+
+func (h *Handler) purgeExpiredCertificates(w http.ResponseWriter, r *http.Request) {
+	n, err := h.certs.PurgeExpired()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to purge expired certificates")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
+}
+
+func (h *Handler) purgeDomainExpiredCertificates(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid domain id")
+		return
+	}
+
+	n, err := h.certs.PurgeExpiredByDomain(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to purge expired certificates")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
+}

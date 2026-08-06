@@ -158,7 +158,7 @@ func run() error {
 		}
 	}()
 
-	go runBackgroundScan(ctx, domainSvc, scanTimeout, scanInterval)
+	go runBackgroundScan(ctx, domainSvc, certSvc, scanTimeout, scanInterval)
 	go runNotifications(ctx, cfg, domainSvc, certSvc)
 
 	<-ctx.Done()
@@ -170,7 +170,7 @@ func run() error {
 	return srv.Shutdown(shutdownCtx)
 }
 
-func runBackgroundScan(ctx context.Context, svc *services.DomainService, timeout, interval time.Duration) {
+func runBackgroundScan(ctx context.Context, svc *services.DomainService, certSvc *services.CertificateService, timeout, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -186,6 +186,15 @@ func runBackgroundScan(ctx context.Context, svc *services.DomainService, timeout
 				continue
 			}
 			slog.Info("background scan complete", "certificates_found", len(certs))
+
+			// Safety net: purge all expired certificates that were not
+			// caught by the renewal-triggered cleanup (e.g. domains whose
+			// cert expired between scan cycles).
+			if n, err := certSvc.PurgeExpired(); err != nil {
+				slog.Error("failed to purge expired certificates", "error", err)
+			} else if n > 0 {
+				slog.Info("purged expired certificates", "deleted", n)
+			}
 		}
 	}
 }

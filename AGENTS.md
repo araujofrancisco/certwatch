@@ -40,7 +40,8 @@ SQLite via `modernc.org/sqlite` (pure Go, no CGO). **`EnsureDir` before `Open`**
 - **Scanner reg**: only HTTPS and CT registered in `main.go`. 6 protocol stubs in `internal/discovery/` are **not wired**.
 - **Sequential scan** (`services/domains.go:138`): tries HTTPS (5s) then CT (10s). First success wins. Background scan caps at 10 concurrent via semaphore.
 - **Auto-scan on add**: background goroutine on `POST /api/domains` and bulk import.
-- **Cert dedup**: checks fingerprint first, then `serial+issuer`. Updates existing cert on match.
+- **Cert dedup**: checks fingerprint first, then `serial+issuer`. Updates existing cert on match; creates new record on renewal.
+- **Expired cert cleanup**: when a renewal is detected (new cert saved), old expired certs for that domain are auto-purged. A periodic global purge also runs after each background scan. Manual purge endpoints: `DELETE /api/certificates/expired` and `DELETE /api/domains/{id}/certificates/expired`.
 - **Scheduler** (`scheduler/scheduler.go:127`): cron-expression engine polls every 30s. Not a real cron daemon.
 - **Notification dedup**: in-memory `${certID}:${threshold}` — lost on restart.
 - **Web UI**: Go embed, no build step. 9 page templates (7 × `layout.html`, 2 × `auth-layout.html`) + raw `docs.html` for Scalar UI.
