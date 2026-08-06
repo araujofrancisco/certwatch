@@ -36,7 +36,7 @@ func (s *httpsScanner) Scan(ctx context.Context, domain string) (*Result, error)
 	defer conn.Close()
 
 	tlsConn := tls.Client(conn, &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: false,
 		ServerName:         domain,
 	})
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
