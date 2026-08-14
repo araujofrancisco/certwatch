@@ -40,6 +40,8 @@ initUserDropdown();
 initGlobalSearch();
 updateNotificationBadge();
 setInterval(updateNotificationBadge, 60000);
+updateScanQueueBadge();
+setInterval(function() { if (window.__scanQueueActive) updateScanQueueBadge(); }, 5000);
 
 function initGlobalSearch() {
   var el = document.getElementById('globalSearch');
@@ -68,6 +70,33 @@ function updateNotificationBadge() {
       badge.classList.add('d-none');
     }
   }).catch(function() {});
+}
+
+function updateScanQueueBadge() {
+  fetch('/api/scanqueue', {
+    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    var badge = document.getElementById('queueBadge');
+    var btn = document.getElementById('queueStatus');
+    if (!badge || !btn) return;
+    if (!data || typeof data.pending === 'undefined') {
+      window.__scanQueueActive = false;
+      badge.classList.add('d-none');
+      btn.classList.remove('queue-active');
+      return;
+    }
+    var total = (data.pending || 0) + (data.inflight || 0);
+    window.__scanQueueActive = total > 0;
+    if (total > 0) {
+      badge.textContent = total;
+      badge.classList.remove('d-none');
+      btn.classList.add('queue-active');
+      if (btn.title !== 'Scan queue') btn.title = 'Scan queue: ' + data.pending + ' pending, ' + data.inflight + ' running';
+    } else {
+      badge.classList.add('d-none');
+      btn.classList.remove('queue-active');
+    }
+  }).catch(function() { window.__scanQueueActive = false; });
 }
 
 function initUserDropdown() {

@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"testing"
 	"time"
 )
@@ -63,7 +64,7 @@ func TestHTTPSScannerWithTestServer(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	s := NewHTTPSScanner(5 * time.Second)
+	s := NewHTTPSScannerWithRoots(5*time.Second, testRoots(t, certPEM))
 	result, err := s.Scan(context.Background(), ln.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +151,7 @@ func TestHTTPSScannerSANs(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	s := NewHTTPSScanner(5 * time.Second)
+	s := NewHTTPSScannerWithRoots(5*time.Second, testRoots(t, certPEM))
 	result, err := s.Scan(context.Background(), ln.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +168,17 @@ func TestHTTPSScannerSANs(t *testing.T) {
 	}
 }
 
+// testRoots returns a cert pool containing the given PEM certificate so the
+// self-signed test certificate is trusted for verification.
+func testRoots(t *testing.T, certPEM []byte) *x509.CertPool {
+	t.Helper()
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(certPEM) {
+		t.Fatal("failed to append test certificate to root pool")
+	}
+	return pool
+}
+
 func generateTestCertPair(t *testing.T) ([]byte, []byte) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -181,6 +193,7 @@ func generateTestCertPair(t *testing.T) ([]byte, []byte) {
 		IsCA:         true,
 		BasicConstraintsValid: true,
 		DNSNames:              []string{"test.example.com"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
 	}
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	if err != nil {

@@ -81,7 +81,7 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to re-fetch domain", "domain_id", domain.ID, "error", err)
 	}
 
-	h.domains.EnqueueScan(r.Context(), domain.ID, false)
+	h.domains.EnqueueScanBackground(domain.ID, false)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"domain": domain})
 }
@@ -201,8 +201,9 @@ func (h *Handler) scanDomain(w http.ResponseWriter, r *http.Request) {
 
 	// Manual "Scan Now": enqueue as high priority and return immediately.
 	// The scan runs in the background queue; results can be polled via the
-	// certificate endpoints.
-	h.domains.EnqueueScan(r.Context(), id, true)
+	// certificate endpoints. The background context is used so the queued
+	// task is not cancelled when this request returns.
+	h.domains.EnqueueScanBackground(id, true)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued"})
 }
 

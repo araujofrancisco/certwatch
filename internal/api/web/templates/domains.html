@@ -152,6 +152,7 @@ async function loadDomainsPage(page) {
 async function scanDomain(id) {
   await apiFetch('/api/domains/' + id + '/scan', {method: 'POST'});
   showToast('Scan queued for domain #' + id, 'success');
+  updateScanQueueBadge();
 }
 async function deleteDomain(id) {
   const ok = await showConfirm('Delete Domain', 'Are you sure you want to delete this domain? This cannot be undone.');

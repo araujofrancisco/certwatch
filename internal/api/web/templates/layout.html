@@ -17,6 +17,10 @@
         <button class="nav-link d-flex align-items-center justify-content-center p-1" id="themeToggle" onclick="toggleTheme()" type="button" title="Toggle dark mode" style="width:32px;height:32px;">
           <i class="bi bi-moon fs-6"></i>
         </button>
+        <a class="nav-link position-relative d-flex align-items-center justify-content-center p-1" id="queueStatus" href="/dashboard" title="Scan queue" style="width:32px;height:32px;">
+          <i class="bi bi-hourglass-split fs-6"></i>
+          <span id="queueBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark d-none" style="font-size: .55rem;">0</span>
+        </a>
         <a class="nav-link position-relative d-flex align-items-center justify-content-center p-1" id="notifBell" href="/certificates?status=expiring" title="Expiring certificates" style="width:32px;height:32px;">
           <i class="bi bi-bell fs-6"></i>
           <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" style="font-size: .55rem;">0</span>

@@ -40,6 +40,13 @@ func (s *DomainService) EnqueueScan(ctx context.Context, domainID int64, priorit
 	s.scanQueue.EnqueueScan(ctx, domainID, priority)
 }
 
+// EnqueueScanBackground queues a scan tied to the service's background context
+// rather than a request context. Request contexts are cancelled as soon as the
+// HTTP handler returns, which would abort a queued scan before it runs.
+func (s *DomainService) EnqueueScanBackground(domainID int64, priority bool) {
+	s.scanQueue.EnqueueScan(s.backgroundCtx, domainID, priority)
+}
+
 // StopScanQueue shuts down the background scan queue, blocking until in-flight
 // scans complete (honoring their contexts).
 func (s *DomainService) StopScanQueue() {

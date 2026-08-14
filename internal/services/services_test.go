@@ -314,6 +314,60 @@ func TestEnqueueScanRunsDomain(t *testing.T) {
 	t.Fatal("enqueued scan did not produce a certificate")
 }
 
+func TestEnqueueScanBackgroundRunsDomain(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	reg := discovery.NewRegistry()
+	reg.Register(&fakeScanner{result: &discovery.Result{
+		Subject:     "example.com",
+		Issuer:      "CA",
+		Serial:      "01",
+		NotBefore:   time.Now().Add(-time.Hour),
+		NotAfter:    time.Now().Add(24 * time.Hour),
+		Fingerprint: "def789",
+		Protocol:    "https",
+		Status:      "valid",
+		SANs:        []string{"example.com"},
+	}})
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 1, 10, time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.EnqueueScanBackground(d.ID, true)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		certs, err := certRepo.ListByDomainID(d.ID)
+		if err == nil && len(certs) > 0 {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("background enqueued scan did not produce a certificate")
+}
+
 func TestListDomainsFiltered(t *testing.T) {
 	svc, _, _ := setupServices(t)
 	_, _ = svc.AddDomain("example.com", "desc one", "")

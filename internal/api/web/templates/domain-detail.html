@@ -93,6 +93,7 @@ async function loadCertificates() {
 async function scanDomain(id) {
   await apiFetch('/api/domains/' + id + '/scan', {method: 'POST'});
   showToast('Scan queued', 'success');
+  updateScanQueueBadge();
   // Poll until the queued scan produces fresh results.
   let attempts = 0;
   const poll = setInterval(async () => {

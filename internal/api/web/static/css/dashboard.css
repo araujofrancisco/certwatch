@@ -89,6 +89,9 @@ body {
 .card-dashboard.critical {
   border-left-color: #dc3545;
 }
+.card-dashboard.queue {
+  border-left-color: #fd7e14;
+}
 .status-valid {
   color: #198754;
   font-weight: 600;
@@ -145,6 +148,19 @@ body {
 /* Notification badge */
 #notifBadge {
   font-size: .55rem;
+}
+
+/* Scan queue badge */
+#queueBadge {
+  font-size: .55rem;
+}
+#queueStatus.queue-active i {
+  color: #ffc107;
+  animation: queue-spin 2s linear infinite;
+}
+@keyframes queue-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* User avatar circle */

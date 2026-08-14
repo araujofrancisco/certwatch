@@ -35,6 +35,15 @@
         </div>
       </div>
     </div>
+    <div class="col-md-3 mb-3">
+      <div class="card card-dashboard queue">
+        <div class="card-body">
+          <h5 class="card-title">Scan Queue</h5>
+          <p class="card-text display-6"><span class="skeleton" id="skeletonScanQueue" style="width:3rem">&nbsp;</span><span id="scanQueueVal" class="d-none"></span></p>
+          <p class="card-text small text-muted" id="scanQueueDetail">&nbsp;</p>
+        </div>
+      </div>
+    </div>
   </div>
   <h3 class="mt-4">Expiring Soon</h3>
   <div class="table-responsive">
@@ -79,7 +88,31 @@ async function loadDashboard() {
     tbody.innerHTML += '<tr><td><a href="/domains/' + c.domain_id + '">' + escapeHtml(c.domain) + '</a></td><td>' + escapeHtml(c.issuer) + '</td><td>' + new Date(c.expires_at).toLocaleDateString() + '</td><td class="' + statusClass('warning') + '">' + c.days_remaining + '</td></tr>';
   });
 }
+async function loadScanQueue() {
+  const data = await apiFetch('/api/scanqueue');
+  const sk = document.getElementById('skeletonScanQueue');
+  const val = document.getElementById('scanQueueVal');
+  const detail = document.getElementById('scanQueueDetail');
+  if (!sk || !val || !detail) return;
+  sk.classList.add('d-none');
+  val.classList.remove('d-none');
+  if (!data || typeof data.pending === 'undefined') {
+    val.textContent = '—';
+    detail.textContent = 'unavailable';
+    return;
+  }
+  const pending = data.pending || 0;
+  const inflight = data.inflight || 0;
+  val.textContent = pending + ' / ' + inflight;
+  if (pending + inflight === 0) {
+    detail.textContent = 'Idle';
+  } else {
+    detail.textContent = pending + ' pending, ' + inflight + ' running';
+  }
+}
 requireAuth();
 loadDashboard();
+loadScanQueue();
+setInterval(loadScanQueue, 5000);
 </script>
 {{end}}
