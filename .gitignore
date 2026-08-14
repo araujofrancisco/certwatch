@@ -13,3 +13,8 @@ Thumbs.db
 vendor/
 backups/
 graphify-out/
+
+# Production config overrides (tracked default.yaml stays as the example template).
+# Override with CERTWATCH_CONFIG or edit these on the server without blocking pulls.
+config/production.yaml
+config/*.local.yaml
