@@ -1,0 +1,121 @@
+{{define "page"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+  <h1 class="h2">Find Certificate</h1>
+</div>
+
+<div class="row g-2 mb-3">
+  <div class="col-md-7">
+    <input type="text" class="form-control" id="searchQuery" placeholder="e.g. example.com" maxlength="200">
+  </div>
+  <div class="col-md-2 d-flex align-items-center">
+    <div class="form-check form-switch">
+      <input class="form-check-input" type="checkbox" role="switch" id="searchSubdomains">
+      <label class="form-check-label" for="searchSubdomains">Include subdomains</label>
+    </div>
+  </div>
+  <div class="col-md-3 d-flex align-items-center gap-2">
+    <button class="btn btn-primary" id="searchBtn" onclick="runSearch()">
+      <span id="searchSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+      <span id="searchBtnText">Search</span>
+    </button>
+  </div>
+</div>
+
+<div id="searchInfo" class="alert alert-secondary small">
+  Searches the public Certificate Transparency logs. Certificates are matched across
+  <strong>ctlogs.dev</strong>, <strong>CertSpotter</strong> and <strong>crt.sh</strong>.
+</div>
+
+<div id="searchError" class="alert alert-danger d-none" role="alert"></div>
+
+<div class="table-responsive">
+  <table class="table table-striped" id="searchTable">
+    <thead><tr><th>Subject</th><th>Alternative Names</th><th>Issuer</th><th>Serial</th><th>Valid From</th><th>Valid To</th><th>Days</th><th>Status</th><th>Source</th></tr></thead>
+    <tbody id="searchBody">
+      <tr class="skeleton-row"><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:60%">&nbsp;</span></td><td><span class="skeleton" style="width:40%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:30%">&nbsp;</span></td><td><span class="skeleton" style="width:30%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
+      <tr class="skeleton-row"><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:55%">&nbsp;</span></td><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:40%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div id="emptySearch" class="empty-state d-none">
+  <h4>No certificates found</h4>
+  <p>No matching certificates were found in the monitored CT sources. Try widening the query or enabling "Include subdomains".</p>
+</div>
+
+<div id="searchProviders" class="text-muted small d-none"><span id="searchProviderText"></span></div>
+{{end}}
+{{define "scripts"}}
+<script>
+var searchRunId = 0;
+
+function setSearchLoading(loading) {
+  document.getElementById('searchSpinner').classList.toggle('d-none', !loading);
+  document.getElementById('searchBtnText').textContent = loading ? 'Searching...' : 'Search';
+  document.getElementById('searchBtn').disabled = loading;
+}
+
+function showSearchError(msg) {
+  var el = document.getElementById('searchError');
+  el.textContent = msg;
+  el.classList.remove('d-none');
+}
+
+async function runSearch() {
+  var q = document.getElementById('searchQuery').value.trim();
+  if (!q) { showToast('Enter a domain to search for', 'warning'); return; }
+
+  var params = new URLSearchParams({ type: 'domain', q: q });
+  if (document.getElementById('searchSubdomains').checked) params.set('include_subdomains', 'true');
+
+  var id = ++searchRunId;
+  document.getElementById('searchError').classList.add('d-none');
+  document.getElementById('emptySearch').classList.add('d-none');
+  document.getElementById('searchProviders').classList.add('d-none');
+  document.getElementById('searchBody').innerHTML =
+    '<tr class="skeleton-row"><td colspan="9"><span class="skeleton" style="width:100%">&nbsp;</span></td></tr>' +
+    '<tr class="skeleton-row"><td colspan="9"><span class="skeleton" style="width:100%">&nbsp;</span></td></tr>';
+  setSearchLoading(true);
+
+  var data = await apiFetch('/api/search/certificates?' + params.toString());
+  setSearchLoading(false);
+  if (id !== searchRunId) return;
+
+  if (!data) { showSearchError('The CT search providers could not be reached. Please try again shortly.'); return; }
+  if (data.error) { showSearchError(data.error); return; }
+
+  document.querySelectorAll('#searchBody .skeleton-row').forEach(function(r) { r.remove(); });
+
+  var results = data.results || [];
+  if (results.length === 0) {
+    document.getElementById('emptySearch').classList.remove('d-none');
+  } else {
+    var tbody = document.getElementById('searchBody');
+    results.forEach(function(e) {
+      var san = (e.san || []).join(', ');
+      tbody.innerHTML += '<tr>' +
+        '<td>' + escapeHtml(e.subject) + '</td>' +
+        '<td class="small">' + escapeHtml(san) + '</td>' +
+        '<td>' + escapeHtml(e.issuer || '-') + '</td>' +
+        '<td class="font-monospace small">' + escapeHtml(e.serial || '-') + '</td>' +
+        '<td>' + (e.not_before ? new Date(e.not_before).toLocaleDateString() : '-') + '</td>' +
+        '<td>' + (e.not_after ? new Date(e.not_after).toLocaleDateString() : '-') + '</td>' +
+        '<td class="' + statusClass(e.status) + '">' + e.days_left + '</td>' +
+        '<td><span class="' + statusClass(e.status) + '">' + escapeHtml(e.status) + '</span></td>' +
+        '<td><span class="badge text-bg-light border">' + escapeHtml(e.source || '') + '</span></td>' +
+      '</tr>';
+    });
+    makeSortable('searchTable');
+  }
+
+  var providers = data.providers_queried || [];
+  if (providers.length) {
+    document.getElementById('searchProviderText').textContent = 'Providers queried: ' + providers.join(' · ');
+    document.getElementById('searchProviders').classList.remove('d-none');
+  }
+}
+
+document.getElementById('searchQuery').addEventListener('keydown', function(e) { if (e.key === 'Enter') runSearch(); });
+requireAuth();
+</script>
+{{end}}

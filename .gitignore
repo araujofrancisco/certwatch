@@ -12,3 +12,4 @@ build/
 Thumbs.db
 vendor/
 backups/
+graphify-out/
