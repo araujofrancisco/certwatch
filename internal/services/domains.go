@@ -133,16 +133,27 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 	if err != nil {
 		return nil, err
 	}
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 
+	// HTTPS is fast (a single handshake); CT aggregation fans out across
+	// multiple providers and should get the bulk of the scan budget so a
+	// slow provider does not starve the rest.
+	ctBudget := timeout - 5*time.Second
+	if ctBudget < 15*time.Second {
+		ctBudget = 15 * time.Second
+	}
 	priorityOrder := []struct {
 		protocol string
 		timeout  time.Duration
 	}{
 		{"https", 5 * time.Second},
-		{"ct", 10 * time.Second},
+		{"ct", ctBudget},
 	}
 
 	var lastErr error
+	var saved []*models.Certificate
 	for _, p := range priorityOrder {
 		scanner := s.scanners.ForProtocol(p.protocol)
 		if scanner == nil {
@@ -150,25 +161,47 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 		}
 
 		scanCtx, cancel := context.WithTimeout(ctx, p.timeout)
-		result, err := scanner.Scan(scanCtx, d.Domain)
+		results, scanErr := scanAll(scanner, scanCtx, d.Domain)
 		cancel()
-		if err != nil {
-			lastErr = err
+		if scanErr != nil {
+			lastErr = scanErr
 			continue
 		}
-		return s.saveCertificate(d.ID, result), nil
+		for _, r := range results {
+			if r != nil {
+				saved = append(saved, s.saveCertificate(d.ID, r))
+			}
+		}
 	}
 
-	cert := &models.Certificate{
-		DomainID:    d.ID,
-		Protocol:    "unknown",
-		Status:      "error",
-		LastChecked: time.Now(),
+	if len(saved) == 0 {
+		cert := &models.Certificate{
+			DomainID:    d.ID,
+			Protocol:    "unknown",
+			Status:      "error",
+			LastChecked: time.Now(),
+		}
+		if err := s.certs.Create(cert); err != nil {
+			slog.Error("failed to save error cert", "domain_id", d.ID, "error", err)
+		}
+		return cert, fmt.Errorf("all scanners failed: %w", lastErr)
 	}
-	if err := s.certs.Create(cert); err != nil {
-		slog.Error("failed to save error cert", "domain_id", d.ID, "error", err)
+
+	return saved[0], nil
+}
+
+// scanAll gathers every certificate a scanner reports for a domain. Scanners
+// that implement MultiScanner (e.g. CT) return their full result set; plain
+// scanners (e.g. HTTPS, which serves a single leaf) return a single result.
+func scanAll(scanner discovery.Scanner, ctx context.Context, domain string) ([]*discovery.Result, error) {
+	if ms, ok := scanner.(discovery.MultiScanner); ok {
+		return ms.ScanAll(ctx, domain)
 	}
-	return cert, fmt.Errorf("all scanners failed: %w", lastErr)
+	r, err := scanner.Scan(ctx, domain)
+	if err != nil {
+		return nil, err
+	}
+	return []*discovery.Result{r}, nil
 }
 
 func (s *DomainService) UpdateDomain(id int64, domain, description, group string, enabled bool, tags []string) (*models.Domain, error) {
@@ -264,14 +297,11 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 		LastChecked: time.Now(),
 	}
 
-	existing, err := s.certs.LatestForDomain(domainID)
-	if err == nil {
-		if existing.Fingerprint != "" && existing.Fingerprint == result.Fingerprint {
-			return s.updateCert(existing, result, cert)
-		}
-		if existing.Serial != "" && existing.Serial == result.Serial && existing.Issuer == result.Issuer {
-			return s.updateCert(existing, result, cert)
-		}
+	// Dedup against every stored certificate for the domain (not just the
+	// latest) by fingerprint or serial+issuer, so a scan that returns
+	// multiple certs does not create duplicates on subsequent scans.
+	if existing := s.findExistingCert(domainID, result); existing != nil {
+		return s.updateCert(existing, result, cert)
 	}
 
 	if err := s.certs.Create(cert); err != nil {
@@ -288,6 +318,24 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 	}
 
 	return cert
+}
+
+func (s *DomainService) findExistingCert(domainID int64, result *discovery.Result) *models.Certificate {
+	existing, err := s.certs.ListByDomainID(domainID)
+	if err != nil {
+		return nil
+	}
+	for _, c := range existing {
+		if c.Fingerprint != "" && c.Fingerprint == result.Fingerprint {
+			return c
+		}
+	}
+	for _, c := range existing {
+		if c.Serial != "" && c.Serial == result.Serial && c.Issuer == result.Issuer {
+			return c
+		}
+	}
+	return nil
 }
 
 func (s *DomainService) updateCert(existing *models.Certificate, result *discovery.Result, fresh *models.Certificate) *models.Certificate {

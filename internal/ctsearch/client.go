@@ -34,11 +34,13 @@ func DefaultConfig() Config {
 	return Config{Timeout: 10 * time.Second, MaxQPS: 1, Providers: DefaultProviders()}
 }
 
-// DefaultProviders returns the default provider priority order. Reliable,
-// key-free providers come first so a degraded crt.sh does not stall every
-// lookup; the operator can override the set and order via config.
+// DefaultProviders returns the default provider priority order. crt.sh is
+// queried first because a single request returns the full certificate set
+// (including expired-excluded views) for a domain; CertSpotter and ctlogs.dev
+// follow as failover when crt.sh is unreachable or throttled. The operator can
+// override the set and order via config.
 func DefaultProviders() []string {
-	return []string{"ctlogsdev", "certspotter", "crtsh"}
+	return []string{"crtsh", "certspotter", "ctlogsdev"}
 }
 
 // ProviderNames is the set of provider names the aggregator can construct.
@@ -129,39 +131,63 @@ func (c *Client) SearchByDomain(ctx context.Context, domain string, includeSubdo
 	return res, nil
 }
 
-// collect runs fn over each provider in order, merging results and applying
-// failover. Providers that have been failing repeatedly are skipped for a
-// cooldown window so one dead source does not stall the whole lookup.
-// Providers that fail transiently are retried once. If every provider fails,
-// the last non-context error is returned. Entries are de-duplicated on
-// Entry.Key(), keeping the first (highest-priority) source.
+// collect runs fn over each provider, merging results and applying failover.
+// Providers are queried concurrently so a slow or unreachable provider does
+// not consume the whole budget and starve the rest; the shared rate limiter
+// still serializes the actual network requests. Providers that have been
+// failing repeatedly are skipped for a cooldown window so one dead source does
+// not stall the whole lookup. Providers that fail transiently are retried once.
+// If every provider fails, the last non-context error is returned. Entries are
+// de-duplicated on Entry.Key().
 func (c *Client) collect(ctx context.Context, fn func(Provider) ([]Entry, error), res *QueryResult) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		lastErr error
+		order   []string
+	)
 	seen := make(map[string]struct{})
-	var lastErr error
 
 	for _, p := range c.providers {
 		if c.breaker.skip(p.Name()) {
 			continue
 		}
-		entries, err := c.call(ctx, fn, p)
-		res.ProvidersQueried = append(res.ProvidersQueried, p.Name())
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return err
+		wg.Add(1)
+		go func(p Provider) {
+			defer wg.Done()
+			entries, err := c.call(ctx, fn, p)
+			mu.Lock()
+			defer mu.Unlock()
+			order = append(order, p.Name())
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					// The overall budget ran out. Keep whatever earlier
+					// providers already returned instead of throwing it away —
+					// a slow crt.sh must not erase CertSpotter/ctlogs.dev results.
+					if len(seen) == 0 {
+						lastErr = err
+					}
+					return
+				}
+				c.breaker.record(p.Name(), err)
+				lastErr = err
+				return
 			}
-			c.breaker.record(p.Name(), err)
-			lastErr = err
-			continue
-		}
-		c.breaker.record(p.Name(), nil)
-		for _, e := range entries {
-			if _, dup := seen[e.Key()]; dup {
-				continue
+			c.breaker.record(p.Name(), nil)
+			for _, e := range entries {
+				if _, dup := seen[e.Key()]; dup {
+					continue
+				}
+				seen[e.Key()] = struct{}{}
+				res.Results = append(res.Results, e)
 			}
-			seen[e.Key()] = struct{}{}
-			res.Results = append(res.Results, e)
-		}
+		}(p)
 	}
+	wg.Wait()
+	res.ProvidersQueried = order
 
 	if len(res.Results) == 0 && lastErr != nil {
 		return fmt.Errorf("all CT search providers failed: %w", lastErr)

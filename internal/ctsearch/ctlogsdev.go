@@ -44,7 +44,7 @@ func NewCTLogsDevProvider(baseURL string, client *http.Client) Provider {
 	return &ctLogsDevProvider{
 		baseURL:          baseURL,
 		client:           client,
-		maxCerts:         25,
+		maxCerts:         100,
 		maxResponseBytes: 4 << 20,
 	}
 }

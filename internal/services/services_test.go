@@ -195,6 +195,24 @@ func (f *fakeScanner) Scan(ctx context.Context, domain string) (*discovery.Resul
 	return f.result, f.err
 }
 
+type fakeMultiScanner struct {
+	results []*discovery.Result
+	err     error
+}
+
+func (f *fakeMultiScanner) Protocol() string { return "ct" }
+
+func (f *fakeMultiScanner) Scan(ctx context.Context, domain string) (*discovery.Result, error) {
+	if len(f.results) == 0 {
+		return nil, f.err
+	}
+	return f.results[0], nil
+}
+
+func (f *fakeMultiScanner) ScanAll(ctx context.Context, domain string) ([]*discovery.Result, error) {
+	return f.results, f.err
+}
+
 func TestScanDomainSavesSANs(t *testing.T) {
 	dir, err := os.MkdirTemp("", "certwatch-test-*")
 	if err != nil {
@@ -366,6 +384,131 @@ func TestEnqueueScanBackgroundRunsDomain(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatal("background enqueued scan did not produce a certificate")
+}
+
+func TestScanDomainSavesAllCTCertificates(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	now := time.Now()
+	ct := &fakeMultiScanner{results: []*discovery.Result{
+		{Subject: "a.example.com", Issuer: "CA1", Serial: "01", NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), Fingerprint: "fp-a", Protocol: "ct", Status: "valid", SANs: []string{"a.example.com"}},
+		{Subject: "b.example.com", Issuer: "CA2", Serial: "02", NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), Fingerprint: "fp-b", Protocol: "ct", Status: "valid", SANs: []string{"b.example.com"}},
+		{Subject: "c.example.com", Issuer: "CA3", Serial: "03", NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), Fingerprint: "fp-c", Protocol: "ct", Status: "valid", SANs: []string{"c.example.com"}},
+	}}
+	reg := discovery.NewRegistry()
+	reg.Register(ct)
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First scan: all three certs should be saved.
+	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	certs, err := certRepo.ListByDomainID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certs) != 3 {
+		t.Fatalf("expected 3 certificates, got %d", len(certs))
+	}
+
+	// Second scan: same certs, must not create duplicates.
+	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	certs, err = certRepo.ListByDomainID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certs) != 3 {
+		t.Fatalf("expected 3 certificates after re-scan, got %d", len(certs))
+	}
+
+	fps := map[string]bool{}
+	for _, c := range certs {
+		fps[c.Fingerprint] = true
+	}
+	for _, want := range []string{"fp-a", "fp-b", "fp-c"} {
+		if !fps[want] {
+			t.Errorf("missing certificate fingerprint %s in %v", want, fps)
+		}
+	}
+}
+
+func TestScanDomainCombinesHTTPSAndCT(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	now := time.Now()
+	reg := discovery.NewRegistry()
+	reg.Register(&fakeScanner{result: &discovery.Result{
+		Subject: "live.example.com", Issuer: "LiveCA", Serial: "A1",
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(90 * 24 * time.Hour),
+		Fingerprint: "fp-live", Protocol: "https", Status: "valid",
+	}})
+	reg.Register(&fakeMultiScanner{results: []*discovery.Result{
+		{Subject: "ct.example.com", Issuer: "CTCA", Serial: "B1",
+			NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(30 * 24 * time.Hour),
+			Fingerprint: "fp-ct", Protocol: "ct", Status: "valid"},
+	}})
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	certs, err := certRepo.ListByDomainID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certs) != 2 {
+		t.Fatalf("expected 2 certificates (https + ct), got %d", len(certs))
+	}
 }
 
 func TestListDomainsFiltered(t *testing.T) {

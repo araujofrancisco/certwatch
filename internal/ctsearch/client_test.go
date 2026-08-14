@@ -40,6 +40,24 @@ func TestClientFailoverWhenFirstProviderFails(t *testing.T) {
 	}
 }
 
+func TestClientKeepsResultsWhenLaterProviderHitsDeadline(t *testing.T) {
+	good := &stubProvider{name: "a", entries: []Entry{baseEntry("S1"), baseEntry("S2")}}
+	slow := &slowProvider{name: "slow"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	res, err := newTestClient(good, slow).SearchByDomain(ctx, "example.com", true)
+	if err != nil {
+		t.Fatalf("expected partial results preserved, got error: %v", err)
+	}
+	if len(res.Results) != 2 {
+		t.Fatalf("expected 2 results from the fast provider, got %d", len(res.Results))
+	}
+	if res.Results[0].Source != "a" {
+		t.Errorf("expected results from fast provider, got source %s", res.Results[0].Source)
+	}
+}
+
 func TestClientAllProvidersFailReturnsError(t *testing.T) {
 	p1 := &stubProvider{name: "a", domainErr: errors.New("down1")}
 	p2 := &stubProvider{name: "b", domainErr: errors.New("down2")}
@@ -114,7 +132,7 @@ func TestNewDefaultClientDefaults(t *testing.T) {
 	for i, p := range c.providers {
 		names[i] = p.Name()
 	}
-	want := []string{"ctlogs.dev", "CertSpotter", "crt.sh"}
+	want := []string{"crt.sh", "CertSpotter", "ctlogs.dev"}
 	for i, w := range want {
 		if i >= len(names) || names[i] != w {
 			t.Fatalf("expected default order %v, got %v", want, names)

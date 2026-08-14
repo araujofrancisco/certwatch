@@ -39,7 +39,11 @@ func (p *crtShProvider) SearchByDomain(ctx context.Context, domain string, _ boo
 }
 
 func (p *crtShProvider) search(ctx context.Context, q string) ([]Entry, error) {
-	u := fmt.Sprintf("%s/?q=%s&output=json", p.baseURL, url.QueryEscape(q))
+	// exclude=expired makes crt.sh return only currently-valid certificates.
+	// Without it, crt.sh returns historical certs ordered oldest-first, so for
+	// a long-lived domain the response is dominated by long-expired records and
+	// the currently-valid set can be pushed beyond the result cap.
+	u := fmt.Sprintf("%s/?q=%s&output=json&exclude=expired", p.baseURL, url.QueryEscape(q))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

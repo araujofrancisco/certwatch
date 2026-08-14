@@ -24,6 +24,9 @@ func TestCRTShParsing(t *testing.T) {
 		if r.URL.Query().Get("output") != "json" {
 			t.Errorf("expected output=json, got %q", r.URL.RawQuery)
 		}
+		if r.URL.Query().Get("exclude") != "expired" {
+			t.Errorf("expected exclude=expired, got %q", r.URL.RawQuery)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, body)
 	}))

@@ -58,6 +58,17 @@ func (f *failOnceProvider) SearchByDomain(ctx context.Context, domain string, in
 	return f.p.SearchByDomain(ctx, domain, include)
 }
 
+// slowProvider blocks until ctx is done, simulating a provider that hangs and
+// hits the caller's deadline.
+type slowProvider struct{ name string }
+
+func (s *slowProvider) Name() string { return s.name }
+
+func (s *slowProvider) SearchByDomain(ctx context.Context, domain string, include bool) ([]Entry, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func newTestClient(providers ...Provider) *Client {
 	return NewClient(Config{Timeout: time.Second, MaxQPS: 1000}, providers...)
 }
