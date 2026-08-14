@@ -210,3 +210,82 @@ func TestEnsureDir_NoopForCurrentDir(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMigrate_DeduplicatesCertificates(t *testing.T) {
+	db := openMemory(t)
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed two domains so the dedup key is scoped per domain.
+	if _, err := db.Exec(`INSERT INTO domains (domain) VALUES ('example.com'), ('other.com')`); err != nil {
+		t.Fatal(err)
+	}
+
+	insert := func(domainID int64, serial, issuer string) int64 {
+		t.Helper()
+		res, err := db.Exec(`INSERT INTO certificates (domain_id, issuer, serial) VALUES (?, ?, ?)`, domainID, issuer, serial)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _ := res.LastInsertId()
+		return id
+	}
+
+	// Same issuance twice with different issuer DN attribute orders → duplicate.
+	insert(1, "030150c1d6a9ce829bac11d55e0f097d", "CN=RapidSSL TLS RSA CA G1,OU=www.digicert.com,O=DigiCert Inc,C=US")
+	insert(1, "030150c1d6a9ce829bac11d55e0f097d", "C=US, O=DigiCert Inc, OU=www.digicert.com, CN=RapidSSL TLS RSA CA G1")
+	// Colon-formatted serial of the same value → still a duplicate.
+	insert(1, "03:01:50:c1:d6:a9:ce:82:9b:ac:11:d5:5e:0f:09:7d", "CN=RapidSSL TLS RSA CA G1,OU=www.digicert.com,O=DigiCert Inc,C=US")
+	// Distinct issuance (different serial) → kept.
+	insert(1, "0845894d10139b36f88005ed7e8a06d5", "C=US, O=DigiCert Inc, OU=www.digicert.com, CN=RapidSSL TLS RSA CA G1")
+	// Same serial on a different domain → not a duplicate.
+	insert(2, "030150c1d6a9ce829bac11d55e0f097d", "CN=RapidSSL TLS RSA CA G1,OU=www.digicert.com,O=DigiCert Inc,C=US")
+
+	if err := db.deduplicateCertificates(); err != nil {
+		t.Fatal(err)
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM certificates`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 certificates after dedup, got %d", count)
+	}
+
+	// Running again must be a no-op (idempotent).
+	if err := db.deduplicateCertificates(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM certificates`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 certificates after second dedup, got %d", count)
+	}
+}
+
+func TestMigrate_KeepsCertificateWithEmptySerial(t *testing.T) {
+	db := openMemory(t)
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	// A row with an empty serial must never be deleted by the dedup pass.
+	if _, err := db.Exec(`INSERT INTO domains (domain) VALUES ('example.com')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO certificates (domain_id, issuer, serial) VALUES (1, 'CN=CA,O=Org', '')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.deduplicateCertificates(); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM certificates`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 certificate (empty serial kept), got %d", count)
+	}
+}

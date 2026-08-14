@@ -30,8 +30,16 @@ certwatch/
 │   │       └── static/       ✅ CSS + JS
 │   ├── auth/                 ✅ JWT authentication + bcrypt
 │   ├── config/               ✅ Configuration loader (YAML + env vars) + CORS origins
-│   ├── database/             ✅ SQLite connection + auto-migration runner (6 tables)
+│   ├── database/             ✅ SQLite connection + auto-migration runner (6 tables + dedup cleanup)
 │   ├── discovery/            ✅ Scanner registry + HTTPS + CT + 6 stubs
+│   ├── ctsearch/             ✅ CT aggregator: client (failover + rate limit) + CertSpotter + ctlogs.dev providers + DN/serial normalization
+│   │   ├── client.go         ✅ Provider fan-out, dedup on Entry.Key(), failure breaker
+│   │   ├── entry.go          ✅ Normalized cert entry + Key/Fingerprint
+│   │   ├── dn.go             ✅ NormalizeDN (canonical issuer DN order)
+│   │   ├── parse.go          ✅ Shared name/time/serial parsing helpers
+│   │   ├── certspotter.go    ✅ SSLMate CertSpotter API provider
+│   │   ├── ctlogsdev.go      ✅ ctlogs.dev HTML index provider
+│   │   └── http.go           ✅ Shared HTTP client builder
 │   ├── logging/              ✅ Structured logger (slog)
 │   ├── notifier/             ✅ SMTP notification engine + profile matcher
 │   ├── scheduler/            ✅ Cron-based job scheduler

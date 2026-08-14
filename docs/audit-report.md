@@ -107,7 +107,7 @@ Method: Manual code review
 **Fixed**: `Register` validates presence of `@` and `.` in the email address.
 
 ### L4 — Duplicate certificate records on repeated scans
-**Fixed**: `saveCertificate` checks fingerprint first, then `serial+issuer`. Existing record is updated instead of creating a duplicate.
+**Fixed**: `saveCertificate` checks fingerprint first, then `serial+issuer`. Existing record is updated instead of creating a duplicate. Dedup now compares **canonicalized** forms — issuer DNs normalized to a fixed attribute order and serials to bare lowercase hex — plus an issuer+subject fallback for providers that omit serials, so the same issuance reported by different CT providers is never stored twice. A startup migration also removes duplicate rows left by older builds.
 
 ### L5 — Data race potential: `Add()` after `Start()`
 **Fixed**: `Start()` acquires the mutex lock and copies the jobs slice before iterating.

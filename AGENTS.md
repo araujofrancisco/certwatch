@@ -38,9 +38,10 @@ SQLite via `modernc.org/sqlite` (pure Go, no CGO). **`EnsureDir` before `Open`**
 ## Key quirks
 
 - **Scanner reg**: only HTTPS and CT registered in `main.go`. 6 protocol stubs in `internal/discovery/` are **not wired**.
-- **Sequential scan** (`services/domains.go:138`): tries HTTPS (5s) then CT (10s). First success wins. Background scan caps at 10 concurrent via semaphore.
+- **CT providers** (`internal/ctsearch/`): **CertSpotter** + **ctlogs.dev**, queried concurrently behind a shared 1 QPS limiter with failover + per-provider cooldown. crt.sh was **removed** (was unreliable).
+- **Sequential scan** (`services/domains.go`): tries HTTPS (5s) then CT (budget = `timeout−5s`, min 15s). Both are `MultiScanner` → **all** valid certs saved.
 - **Auto-scan on add**: background goroutine on `POST /api/domains` and bulk import.
-- **Cert dedup**: checks fingerprint first, then `serial+issuer`. Updates existing cert on match; creates new record on renewal.
+- **Cert dedup** (`services/domains.go:findExistingCert`): fingerprint first; then canonicalized `serial+issuer` (NormalizeSerial + NormalizeDN); an issuer+subject+same-day-expiry fallback runs **only when a serial is missing** (CertSpotter sometimes omits serials), to avoid collapsing distinct renewals from the same CA. The renewal purge (`DeleteExpiredByDomain`) only fires when the saved cert is valid, so inserting expired historical CT certs no longer cascades into deleting live rows. Startup migration (`database.deduplicateCertificates`) collapses leftover duplicate rows.
 - **Expired cert cleanup**: when a renewal is detected (new cert saved), old expired certs for that domain are auto-purged. A periodic global purge also runs after each background scan. Manual purge endpoints: `DELETE /api/certificates/expired` and `DELETE /api/domains/{id}/certificates/expired`.
 - **Scheduler** (`scheduler/scheduler.go:127`): cron-expression engine polls every 30s. Not a real cron daemon.
 - **Notification dedup**: in-memory `${certID}:${threshold}` — lost on restart.

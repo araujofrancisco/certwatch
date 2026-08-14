@@ -209,8 +209,8 @@ func parseCertDetail(body []byte, now time.Time) (Entry, bool) {
 					// Subject DN appears before the issuer DN; the issuer is
 					// the last DN on the page.
 					issuer = it.value
-				case key == "serial number":
-					serial = normalizeSerial(it.value)
+			case key == "serial number":
+				serial = NormalizeSerial(it.value)
 				case key == "not before":
 					notBefore = it.value
 				case key == "not after":
@@ -276,14 +276,6 @@ func splitDetailNames(s string) []string {
 		out = append(out, name)
 	}
 	return out
-}
-
-// normalizeSerial strips formatting so serials compare cleanly across providers
-// (crt.sh returns bare lowercase hex; ctlogs.dev omits colons already).
-func normalizeSerial(s string) string {
-	s = strings.ReplaceAll(s, ":", "")
-	s = strings.ReplaceAll(s, " ", "")
-	return strings.ToLower(strings.TrimSpace(s))
 }
 
 // parseCTDetailTime parses the ctlogs.dev detail page date layout

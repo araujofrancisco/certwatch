@@ -27,6 +27,11 @@ read config file: config/default.yaml: no such file or directory
 
 ## Runtime issues
 
+### Duplicate certificates for one domain
+A domain shows the same certificate listed multiple times. This happens when CT providers render the same issuer DN in different attribute orders (e.g. ctlogs.dev `CN=…,O=…,C=US` vs CertSpotter `C=US, O=…, CN=…`), so older builds treated one issuance as two records.
+
+**Fix**: Upgrade to a build with issuer-DN normalization and restart — the startup migration automatically deletes the duplicates, keeping one row per (domain, serial, issuer). Verify via the domain's certificate list.
+
 ### Health check failing in Docker
 The health check runs `certwatch -health` which connects to the health endpoint (default `http://localhost:8080/health`, configurable via `CERTWATCH_SERVER_PORT`). If the container isn't ready yet, the check may fail temporarily.
 

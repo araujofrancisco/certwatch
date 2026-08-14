@@ -9,6 +9,8 @@ import (
 	"math/big"
 	"net"
 	"time"
+
+	"github.com/araujofrancisco/certwatch/internal/ctsearch"
 )
 
 type httpsScanner struct {
@@ -74,8 +76,8 @@ func (s *httpsScanner) Scan(ctx context.Context, domain string) (*Result, error)
 
 	return &Result{
 		Subject:     leaf.Subject.String(),
-		Issuer:      leaf.Issuer.String(),
-		Serial:      serialToString(leaf.SerialNumber),
+		Issuer:      ctsearch.NormalizeDN(leaf.Issuer.String()),
+		Serial:      ctsearch.NormalizeSerial(serialToString(leaf.SerialNumber)),
 		NotBefore:   leaf.NotBefore,
 		NotAfter:    leaf.NotAfter,
 		Fingerprint: fingerprint,

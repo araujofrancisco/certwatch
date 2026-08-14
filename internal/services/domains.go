@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/araujofrancisco/certwatch/internal/ctsearch"
 	"github.com/araujofrancisco/certwatch/internal/discovery"
 	"github.com/araujofrancisco/certwatch/internal/models"
 )
@@ -308,13 +309,20 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 		slog.Error("failed to save certificate", "domain_id", domainID, "error", err)
 	}
 
-	// Renewal detected — a new certificate was saved and the latest cert
-	// changed. Automatically remove any old expired certificates for this
-	// domain so they don't accumulate across renewal cycles.
-	if n, err := s.certs.DeleteExpiredByDomain(domainID); err != nil {
-		slog.Error("failed to purge expired certificates on renewal", "domain_id", domainID, "error", err)
-	} else if n > 0 {
-		slog.Info("purged expired certificates on renewal", "domain_id", domainID, "deleted", n)
+	// Renewal purge: when a scan inserts a NEW valid certificate, opportunistically
+	// remove old expired certificates for the same domain so history does not
+	// accumulate across renewal cycles. This only fires for genuinely new valid
+	// certs — inserting an expired historical cert (common from CT logs) must not
+	// trigger a purge, since that cert itself is expired and would be deleted
+	// immediately, and a purge must never run while expired certs are being
+	// inserted in bulk (it could delete valid rows that an interleaving scan
+	// has not yet normalized).
+	if cert.Status == "valid" {
+		if n, err := s.certs.DeleteExpiredByDomain(domainID); err != nil {
+			slog.Error("failed to purge expired certificates on renewal", "domain_id", domainID, "error", err)
+		} else if n > 0 {
+			slog.Info("purged expired certificates on renewal", "domain_id", domainID, "deleted", n)
+		}
 	}
 
 	return cert
@@ -325,17 +333,64 @@ func (s *DomainService) findExistingCert(domainID int64, result *discovery.Resul
 	if err != nil {
 		return nil
 	}
+	// Fingerprint match first: it is the strongest signal (HTTPS uses the
+	// real SHA-256 of the DER body; CT providers derive a stable key hash).
 	for _, c := range existing {
 		if c.Fingerprint != "" && c.Fingerprint == result.Fingerprint {
 			return c
 		}
 	}
+	// Serial+issuer fallback, comparing canonical forms so rows written before
+	// DN/serial normalization still match (e.g. ctlogs.dev CN-first issuer vs
+	// CertSpotter C-first, or colon-separated serials).
 	for _, c := range existing {
-		if c.Serial != "" && c.Serial == result.Serial && c.Issuer == result.Issuer {
+		if c.Serial == "" || result.Serial == "" {
+			continue
+		}
+		if ctsearch.NormalizeSerial(c.Serial) == ctsearch.NormalizeSerial(result.Serial) &&
+			ctsearch.NormalizeDN(c.Issuer) == ctsearch.NormalizeDN(result.Issuer) {
 			return c
 		}
 	}
+	// Empty-serial fallback: when a provider omits the serial (CertSpotter for
+	// some issuances), the serial+issuer path cannot match. Fall back to a
+	// match on normalized issuer + subject + the same expiry date, so distinct
+	// renewals from the same CA (same issuer+subject, different validity
+	// windows) are not collapsed into one row.
+	for _, c := range existing {
+		if c.Serial != "" && result.Serial != "" {
+			continue
+		}
+		if c.Issuer == "" || result.Issuer == "" || c.Subject == "" || result.Subject == "" {
+			continue
+		}
+		if ctsearch.NormalizeDN(c.Issuer) != ctsearch.NormalizeDN(result.Issuer) {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(c.Subject), strings.TrimSpace(result.Subject)) {
+			continue
+		}
+		// Match on the same calendar day so providers that truncate seconds
+		// (ctlogs.dev shows 23:59:00 where the cert is 23:59:59) still dedup,
+		// while distinct renewals — which expire on different days — stay
+		// separate rows.
+		if !sameDay(c.NotAfter, result.NotAfter) {
+			continue
+		}
+		return c
+	}
 	return nil
+}
+
+// sameDay reports whether two instants fall on the same UTC calendar day. Zero
+// values never match so an unknown expiry never collapses distinct certs.
+func sameDay(a, b time.Time) bool {
+	if a.IsZero() || b.IsZero() {
+		return false
+	}
+	ay, am, ad := a.UTC().Date()
+	by, bm, bd := b.UTC().Date()
+	return ay == by && am == bm && ad == bd
 }
 
 func (s *DomainService) updateCert(existing *models.Certificate, result *discovery.Result, fresh *models.Certificate) *models.Certificate {

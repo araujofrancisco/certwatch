@@ -9,6 +9,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/araujofrancisco/certwatch/internal/ctsearch"
 )
 
 type DB struct {
@@ -79,7 +81,75 @@ func (db *DB) Migrate() error {
 		return err
 	}
 
+	// Deduplicate certificate rows that the pre-normalization scanner wrote
+	// (the same issuance reported by CT providers with different issuer DN
+	// attribute orders). Safe to run on every start: after the first pass no
+	// duplicate keys remain, so subsequent runs delete nothing.
+	if err := db.deduplicateCertificates(); err != nil {
+		return err
+	}
+
 	slog.Info("database migrations complete")
+	return nil
+}
+
+// deduplicateCertificates removes duplicate certificate rows for the same
+// domain that share the same normalized serial + normalized issuer, keeping
+// only the most recently created row. Duplicates arise when CT providers
+// format the same issuer DN in different attribute orders (ctlogs.dev emits
+// CN-first, CertSpotter emits C-first) so the pre-normalization dedup treated
+// one issuance as two rows.
+func (db *DB) deduplicateCertificates() error {
+	rows, err := db.Query(`SELECT id, domain_id, serial, issuer FROM certificates ORDER BY id`)
+	if err != nil {
+		return fmt.Errorf("deduplicate certificates: query: %w", err)
+	}
+	defer rows.Close()
+
+	type certRow struct {
+		id       int64
+		domainID int64
+		serial   string
+		issuer   string
+	}
+	var certs []certRow
+	for rows.Next() {
+		var r certRow
+		if err := rows.Scan(&r.id, &r.domainID, &r.serial, &r.issuer); err != nil {
+			return fmt.Errorf("deduplicate certificates: scan: %w", err)
+		}
+		if r.serial == "" {
+			continue
+		}
+		certs = append(certs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("deduplicate certificates: rows: %w", err)
+	}
+
+	// Key is (domain_id, normalized serial, normalized issuer). Rows arrive
+	// ordered by id ascending, so the first row for each key is the keeper.
+	firstID := make(map[string]int64)
+	var toDelete []int64
+	for _, c := range certs {
+		key := fmt.Sprintf("%d|%s|%s", c.domainID, ctsearch.NormalizeSerial(c.serial), ctsearch.NormalizeDN(c.issuer))
+		if keeper, ok := firstID[key]; ok {
+			toDelete = append(toDelete, c.id)
+			slog.Info("removing duplicate certificate", "cert_id", c.id, "keeping", keeper, "domain_id", c.domainID)
+			continue
+		}
+		firstID[key] = c.id
+	}
+	if len(toDelete) == 0 {
+		return nil
+	}
+
+	for _, id := range toDelete {
+		if _, err := db.Exec(`DELETE FROM certificates WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("deduplicate certificates: delete %d: %w", id, err)
+		}
+	}
+	slog.Info("removed duplicate certificates", "deleted", len(toDelete))
 	return nil
 }
 

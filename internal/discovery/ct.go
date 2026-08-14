@@ -47,7 +47,6 @@ func NewCTScannerWithClient(client *http.Client, timeout time.Duration) Scanner 
 
 func buildProviders(client *http.Client) []ctsearch.Provider {
 	return []ctsearch.Provider{
-		ctsearch.NewCRTShProvider("", client),
 		ctsearch.NewCertSpotterProvider("", "", client),
 		ctsearch.NewCTLogsDevProvider("", client),
 	}

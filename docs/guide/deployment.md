@@ -40,6 +40,10 @@ The included `docker-compose.yml` configures:
 - **Health check** every 30s via `certwatch -health`
 - **Auto-restart** unless stopped manually
 
+## Upgrades & migrations
+
+CertWatch applies all database migrations automatically on startup (idempotent, safe to run every boot). This includes a duplicate-certificate cleanup: on the first start after an upgrade, rows that represent the same issuance (same serial + same canonical issuer DN) are collapsed to one, so no manual SQL is required after updating.
+
 ## Production considerations
 
 ### Database

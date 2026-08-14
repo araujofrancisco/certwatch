@@ -13,7 +13,7 @@ graph TD
         cmd/certwatch/ --> internal/database/
         cmd/certwatch/ --> internal/api/ --> internal/services/ --> internal/repository/
         internal/repository/ --> internal/database/
-        internal/services/ --> internal/discovery/
+        internal/services/ --> internal/discovery/ --> internal/ctsearch/
         internal/api/ --> internal/auth/ --> internal/middleware/
         internal/middleware/ --> MS[security.go 🔹 CSP/headers]
         internal/api/ --> U[internal/api/web/ 🔹 Phase 3 UI]
@@ -41,7 +41,8 @@ graph TD
 | Templates | `internal/templates/` | 4 ✅ | None |
 | Scheduler | `internal/scheduler/` | 4 ✅ | None |
 | Notifier | `internal/notifier/` | 4 ✅ | `internal/config`, `internal/templates`, `internal/models` |
-| Discovery | `internal/discovery/` | 2 ✅ | `internal/models` |
+| Discovery | `internal/discovery/` | 2 ✅ | `internal/models`, `internal/ctsearch` |
+| CT Search | `internal/ctsearch/` | 9 ✅ | None (providers: CertSpotter, ctlogs.dev) |
 | Auth | `internal/auth/` | 2 ✅ | None |
 | Middleware | `internal/middleware/` | 2 ✅ | `internal/auth` |
 | Security Headers | `internal/middleware/security.go` | 7 ✅ | None |
@@ -56,10 +57,17 @@ graph TD
 Scanners are registered in `main.go` and tried sequentially in priority order:
 
 1. **HTTPS** (5s timeout) — SNI-aware TLS handshake, most likely to succeed
-2. **CT** (10s timeout) — Certificate Transparency log query via crt.sh
+2. **CT** (timeout − 5s budget, min 15s) — Certificate Transparency search via the `internal/ctsearch` aggregator: **CertSpotter** (JSON API) and **ctlogs.dev** (HTML index), queried **concurrently** behind a shared 1 QPS rate limiter. Results are de-duplicated on a normalized key (serial + canonicalized issuer DN + subject). Partial results are kept if one provider is slow or fails; a repeatedly-failing provider is skipped for a cooldown window.
 3. **SMTP / IMAP / POP3 / LDAP / FTP / TLS** (2s each) — protocol stubs
 
-First scanner to return a valid certificate wins. If all fail, an "error" cert with `protocol=unknown` is created.
+HTTPS and CT both implement the `MultiScanner` interface, so a scan saves **every** valid certificate returned (not just the first). If all scanners fail, an "error" cert with `protocol=unknown` is created.
+
+Certificate identity is canonicalized so the same issuance never appears twice:
+
+- **Issuer DN**: normalized to a canonical attribute order (`C, ST, L, O, OU, CN`) — ctlogs.dev emits CN-first, CertSpotter C-first, Go's `x509` CN-first.
+- **Serial**: normalized to bare lowercase hex (colons/whitespace stripped).
+- Dedup order: fingerprint → serial+issuer (normalized) → issuer+subject fallback for providers that omit serials.
+- On startup, an idempotent migration removes duplicate rows left by pre-normalization scans.
 
 ## Tags & Groups
 

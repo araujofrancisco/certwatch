@@ -10,14 +10,14 @@ CertWatch discovers certificates across multiple protocols, tracks expiry dates,
 - **OpenAPI 3.0 docs** — interactive API docs served at `/api/docs` via Scalar UI
 - **Bulk import** — add many domains at once via API or web UI (objects or plain strings)
 - **Groups & Tags** — organize domains with optional groups and M:N tag relationships
-- **Certificate discovery** — HTTPS (SNI-aware) + Certificate Transparency (crt.sh) + 6 protocol stubs
+- **Certificate discovery** — HTTPS (SNI-aware) + Certificate Transparency (CertSpotter, ctlogs.dev, with failover) + 6 protocol stubs
 - **Server-side filtering** — domains and certificates list endpoints support multi-criteria query params
 - **Expiration monitoring** — track expiry across all discovered certificates
 - **Email notifications** — immediate alerts at configurable thresholds, plus daily/weekly digest reports
 - **Cron scheduling** — 5-field POSIX cron with timezone support
 - **Web dashboard** — Bootstrap 5 UI with summary cards, filters, inventory reports, CSV/JSON export, bulk import
 - **Auto-scan on add** — domains scanned in background immediately after creation
-- **Certificate dedup** — fingerprint + serial/issuer matching to prevent duplicates
+- **Certificate dedup** — fingerprint + serial/issuer matching with normalized DN comparison to prevent duplicates (incl. automatic cleanup of pre-existing duplicates on startup)
 - **Backup & restore** — timestamped online snapshots with 30-day retention, Docker & standalone support
 - **Docker deployment** — multi-stage scratch image
 - **Input validation** — domain format validation, email format check, request body size limits (1 MB)
@@ -27,7 +27,7 @@ CertWatch discovers certificates across multiple protocols, tracks expiry dates,
 ## Quick start
 
 ```bash
-make test       # 146+ tests, all pass
+make test       # 206 tests, all pass
 make build      # static binary → build/certwatch
 make run        # start on :8080
 ```
@@ -67,7 +67,7 @@ discovery:
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
 | 1 — Foundation | ✅ Complete | Go scaffold, Docker, SQLite, config, logging, CI |
-| 2 — Backend | ✅ Complete | REST API, JWT auth, CRUD, scanners, 146+ tests |
+| 2 — Backend | ✅ Complete | REST API, JWT auth, CRUD, scanners, 206 tests |
 | 3 — Web UI | ✅ Complete | Bootstrap 5 dashboard, 7 pages, Go embed |
 | 4 — Notification | ✅ Complete | SMTP alerts, daily/weekly digests, cron scheduler |
 | 5 — Reports | ✅ Complete | Inventory API + UI with summary cards, filters, export |

@@ -24,6 +24,38 @@ func TestClientSearchByDomainDedupesAcrossProviders(t *testing.T) {
 	}
 }
 
+func TestClientSearchByDomainDedupesIssuerDNVariants(t *testing.T) {
+	now := time.Now()
+	issuerCNFirst := "CN=RapidSSL TLS RSA CA G1,OU=www.digicert.com,O=DigiCert Inc,C=US"
+	issuerCFirst := "C=US, O=DigiCert Inc, OU=www.digicert.com, CN=RapidSSL TLS RSA CA G1"
+
+	mk := func(issuer string) Entry {
+		e := Entry{
+			CommonName: "example.com",
+			SANs:       []string{"example.com"},
+			Issuer:     issuer,
+			Serial:     "030150c1d6a9ce829bac11d55e0f097d",
+			NotBefore:  now.Add(-24 * time.Hour),
+			NotAfter:   now.Add(30 * 24 * time.Hour),
+		}
+		e.populate(now)
+		return e
+	}
+
+	// Same issuance reported by both providers with different issuer DN
+	// attribute orders. Normalization must make their dedup keys equal.
+	p1 := &stubProvider{name: "ctlogs.dev", entries: []Entry{mk(issuerCNFirst)}}
+	p2 := &stubProvider{name: "CertSpotter", entries: []Entry{mk(issuerCFirst)}}
+
+	res, err := newTestClient(p1, p2).SearchByDomain(context.Background(), "example.com", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Results) != 1 {
+		t.Fatalf("expected 1 deduped result, got %d", len(res.Results))
+	}
+}
+
 func TestClientFailoverWhenFirstProviderFails(t *testing.T) {
 	p1 := &stubProvider{name: "a", domainErr: errors.New("crt.sh down")}
 	p2 := &stubProvider{name: "b", entries: []Entry{baseEntry("S9")}}
@@ -107,12 +139,12 @@ func TestClientRetriesTransientErrorOnce(t *testing.T) {
 }
 
 func TestNewDefaultClientRespectsProviderOrder(t *testing.T) {
-	c := NewDefaultClient(Config{Timeout: time.Second, MaxQPS: 1000, Providers: []string{"crtsh", "ctlogsdev"}})
+	c := NewDefaultClient(Config{Timeout: time.Second, MaxQPS: 1000, Providers: []string{"certspotter", "ctlogsdev"}})
 	if len(c.providers) != 2 {
 		t.Fatalf("expected 2 providers, got %d", len(c.providers))
 	}
-	if c.providers[0].Name() != "crt.sh" {
-		t.Errorf("expected crt.sh first, got %s", c.providers[0].Name())
+	if c.providers[0].Name() != "CertSpotter" {
+		t.Errorf("expected CertSpotter first, got %s", c.providers[0].Name())
 	}
 	if c.providers[1].Name() != "ctlogs.dev" {
 		t.Errorf("expected ctlogs.dev second, got %s", c.providers[1].Name())
@@ -132,7 +164,7 @@ func TestNewDefaultClientDefaults(t *testing.T) {
 	for i, p := range c.providers {
 		names[i] = p.Name()
 	}
-	want := []string{"crt.sh", "CertSpotter", "ctlogs.dev"}
+	want := []string{"CertSpotter", "ctlogs.dev"}
 	for i, w := range want {
 		if i >= len(names) || names[i] != w {
 			t.Fatalf("expected default order %v, got %v", want, names)

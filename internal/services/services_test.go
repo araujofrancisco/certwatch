@@ -458,6 +458,182 @@ func TestScanDomainSavesAllCTCertificates(t *testing.T) {
 	}
 }
 
+func TestScanDomainDedupesIssuerDNFormatVariants(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	now := time.Now()
+	// The same issuance reported twice with the same serial but different
+	// issuer DN attribute orders, exactly as ctlogs.dev (CN-first) and
+	// CertSpotter (C-first) render the same CA.
+	ct := &fakeMultiScanner{results: []*discovery.Result{
+		{Subject: "example.com", Issuer: "CN=RapidSSL TLS RSA CA G1,OU=www.digicert.com,O=DigiCert Inc,C=US", Serial: "030150c1d6a9ce829bac11d55e0f097d", NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), Fingerprint: "fp-1", Protocol: "ct", Status: "valid", SANs: []string{"example.com"}},
+		{Subject: "example.com", Issuer: "C=US, O=DigiCert Inc, OU=www.digicert.com, CN=RapidSSL TLS RSA CA G1", Serial: "030150c1d6a9ce829bac11d55e0f097d", NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), Fingerprint: "fp-1", Protocol: "ct", Status: "valid", SANs: []string{"example.com"}},
+	}}
+	reg := discovery.NewRegistry()
+	reg.Register(ct)
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	certs, err := certRepo.ListByDomainID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certs) != 1 {
+		t.Fatalf("expected 1 certificate (issuer DN variants deduped), got %d", len(certs))
+	}
+	if certs[0].Serial != "030150c1d6a9ce829bac11d55e0f097d" {
+		t.Errorf("unexpected serial stored: %s", certs[0].Serial)
+	}
+}
+
+func TestScanDomainDedupesEmptySerialVariant(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	now := time.Now()
+	// The same issuance: one provider (ctlogs.dev) reports the serial, the
+	// other (CertSpotter) omits it. The fingerprint differs because the dedup
+	// key embeds the serial, so the empty-serial issuer+subject fallback must
+	// prevent a duplicate row.
+	ct := &fakeMultiScanner{results: []*discovery.Result{
+		{Subject: "example.com", Issuer: "CN=RapidSSL TLS RSA CA G1,OU=www.digicert.com,O=DigiCert Inc,C=US", Serial: "030150c1d6a9ce829bac11d55e0f097d", NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), Fingerprint: "fp-1", Protocol: "ct", Status: "valid", SANs: []string{"example.com"}},
+		{Subject: "example.com", Issuer: "C=US, O=DigiCert Inc, OU=www.digicert.com, CN=RapidSSL TLS RSA CA G1", Serial: "", NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), Fingerprint: "fp-2", Protocol: "ct", Status: "valid", SANs: []string{"example.com"}},
+	}}
+	reg := discovery.NewRegistry()
+	reg.Register(ct)
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	certs, err := certRepo.ListByDomainID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+ 	if len(certs) != 1 {
+		t.Fatalf("expected 1 certificate (empty-serial variant deduped), got %d", len(certs))
+	}
+}
+
+func TestScanDomainDoesNotCollapseDistinctRenewals(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	now := time.Now()
+	issuer := "C=GB, O=Sectigo Limited, CN=Sectigo Public Server Authentication CA DV R36"
+	// The current valid cert + several distinct renewals: same issuer and
+	// subject (*.example.com) but DIFFERENT serials and different expiry days.
+	ct := &fakeMultiScanner{results: []*discovery.Result{
+		{Subject: "*.example.com", Issuer: issuer, Serial: "A1",
+			NotBefore: now.Add(-time.Hour), NotAfter: now.Add(30 * 24 * time.Hour),
+			Fingerprint: "fp-a1", Protocol: "ct", Status: "valid", SANs: []string{"*.example.com"}},
+		{Subject: "*.example.com", Issuer: issuer, Serial: "B2",
+			NotBefore: now.Add(-400 * 24 * time.Hour), NotAfter: now.Add(-10 * 24 * time.Hour),
+			Fingerprint: "fp-b2", Protocol: "ct", Status: "expired", SANs: []string{"*.example.com"}},
+		{Subject: "*.example.com", Issuer: issuer, Serial: "C3",
+			NotBefore: now.Add(-800 * 24 * time.Hour), NotAfter: now.Add(-400 * 24 * time.Hour),
+			Fingerprint: "fp-c3", Protocol: "ct", Status: "expired", SANs: []string{"*.example.com"}},
+	}}
+	reg := discovery.NewRegistry()
+	reg.Register(ct)
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	certs, err := certRepo.ListByDomainID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// All three distinct certs must survive — issuer+subject alone must not
+	// collapse distinct renewals, and the valid cert must not be overwritten
+	// by expired ones.
+	if len(certs) != 3 {
+		t.Fatalf("expected 3 distinct certificates kept, got %d", len(certs))
+	}
+	validCount := 0
+	for _, c := range certs {
+		if c.Status == "valid" {
+			validCount++
+		}
+	}
+	if validCount != 1 {
+		t.Errorf("expected 1 valid cert to survive, got %d", validCount)
+	}
+}
+
 func TestScanDomainCombinesHTTPSAndCT(t *testing.T) {
 	dir, err := os.MkdirTemp("", "certwatch-test-*")
 	if err != nil {

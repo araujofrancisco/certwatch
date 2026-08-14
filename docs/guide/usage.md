@@ -301,7 +301,24 @@ The binary also supports a `-health` flag for Docker health checks:
 
 ## Background scans
 
-The server periodically scans all enabled domains for certificates. The interval is configured via `discovery.scan_interval` (default: 6h). Up to 10 domains are scanned concurrently via semaphore. Each domain is scanned sequentially — protocols are tried in priority order (HTTPS → CT) with per-scanner timeouts. The first successful scan result is saved; if all fail, an error certificate is created.
+The server periodically scans all enabled domains for certificates. The interval is configured via `discovery.scan_interval` (default: 6h). Up to 10 domains are scanned concurrently via semaphore. Each domain is scanned sequentially:
+
+1. **HTTPS** (5s timeout) — SNI-aware TLS handshake
+2. **CT** (`discovery.timeout` − 5s budget, min 15s) — Certificate Transparency search through the `ctsearch` aggregator using **CertSpotter** and **ctlogs.dev** concurrently behind a shared 1 QPS rate limiter. Provider failures are absorbed (failover, per-provider cooldown, single retry) and partial results are preserved if the budget runs out.
+
+Both scanners implement the multi-result interface, so a successful scan saves **all** valid certificates found (not just the first). If all scanners fail, an error certificate is created.
+
+### Certificate dedup
+
+Certificates are de-duplicated so re-scans never create duplicate rows:
+
+1. **Fingerprint** — HTTPS uses the real SHA-256 of the cert DER; CT uses a stable derived hash of the dedup key.
+2. **Serial + issuer** — compared in canonical form: serials are normalized to bare lowercase hex, and issuer DNs to a canonical attribute order (`C, ST, L, O, OU, CN`) so the same CA renders identically regardless of provider formatting. Skipped when either side lacks a serial.
+3. **Issuer + subject + same expiry day** — the final fallback, used **only** when a provider omits the serial (e.g. CertSpotter), so the same issuance still collapses to one row. It also requires the same calendar expiry day, so distinct renewals from the same CA (same issuer+subject, different expiry) are kept as separate rows.
+
+When a scan inserts a **new valid** certificate, old expired certificates for that domain are auto-purged. Expired historical certificates returned by CT logs are stored without triggering the purge, so they can be inspected (filter by `?status=valid` or `?expired=true`).
+
+On startup, CertWatch runs an idempotent migration that deletes duplicate rows left behind by older pre-normalization scans, keeping one row per (domain, serial, issuer). No manual database cleanup is needed.
 
 Scans are also triggered:
 - Automatically on domain creation (`POST /api/domains`)

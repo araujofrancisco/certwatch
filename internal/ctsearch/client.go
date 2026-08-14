@@ -24,7 +24,7 @@ type Config struct {
 	CertSpotterToken string
 	// Providers lists the provider names to query, in priority order. Names
 	// must be members of ProviderNames. When empty, the default order
-	// (ctlogs.dev, CertSpotter, crt.sh) is used.
+	// (CertSpotter, ctlogs.dev) is used.
 	Providers []string
 }
 
@@ -34,17 +34,17 @@ func DefaultConfig() Config {
 	return Config{Timeout: 10 * time.Second, MaxQPS: 1, Providers: DefaultProviders()}
 }
 
-// DefaultProviders returns the default provider priority order. crt.sh is
-// queried first because a single request returns the full certificate set
-// (including expired-excluded views) for a domain; CertSpotter and ctlogs.dev
-// follow as failover when crt.sh is unreachable or throttled. The operator can
-// override the set and order via config.
+// DefaultProviders returns the default provider priority order. CertSpotter is
+// queried first because its JSON API returns the full certificate set for a
+// domain in a single request; ctlogs.dev follows as failover when CertSpotter
+// is unreachable or throttled. The operator can override the set and order via
+// config.
 func DefaultProviders() []string {
-	return []string{"crtsh", "certspotter", "ctlogsdev"}
+	return []string{"certspotter", "ctlogsdev"}
 }
 
 // ProviderNames is the set of provider names the aggregator can construct.
-var ProviderNames = map[string]bool{"ctlogsdev": true, "certspotter": true, "crtsh": true}
+var ProviderNames = map[string]bool{"ctlogsdev": true, "certspotter": true}
 
 // QueryResult is the normalized outcome of a search request. It is JSON-ready
 // and used directly by the API layer.
@@ -97,7 +97,6 @@ func NewDefaultClient(cfg Config) *Client {
 	factories := map[string]func() Provider{
 		"ctlogsdev":   func() Provider { return NewCTLogsDevProvider("", httpClient()) },
 		"certspotter": func() Provider { return NewCertSpotterProvider("", cfg.CertSpotterToken, httpClient()) },
-		"crtsh":       func() Provider { return NewCRTShProvider("", httpClient()) },
 	}
 	providers := make([]Provider, 0, len(names))
 	for _, name := range names {
@@ -166,7 +165,7 @@ func (c *Client) collect(ctx context.Context, fn func(Provider) ([]Entry, error)
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					// The overall budget ran out. Keep whatever earlier
 					// providers already returned instead of throwing it away —
-					// a slow crt.sh must not erase CertSpotter/ctlogs.dev results.
+					// a slow provider must not erase other providers' results.
 					if len(seen) == 0 {
 						lastErr = err
 					}

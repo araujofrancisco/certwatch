@@ -123,7 +123,7 @@ func (r certSpotterRow) toEntry(now time.Time) Entry {
 		CommonName: strings.TrimSpace(r.CommonName),
 		SANs:       names,
 		Issuer:     r.Issuer.Name,
-		Serial:     r.SerialNumber,
+		Serial:     NormalizeSerial(r.SerialNumber),
 		NotBefore:  parseCTTime(r.NotBefore),
 		NotAfter:   parseCTTime(r.NotAfter),
 		Source:     "CertSpotter",

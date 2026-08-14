@@ -2,7 +2,7 @@
 
 Project: **CertWatch** — lightweight, self-hosted SSL certificate inventory and expiration monitoring.
 
-Status: **Phases 1–9 implemented** (Go backend, REST API, JWT auth, SQLite, HTTPS+CT scanners, Bootstrap 5 web UI, cron notifications, inventory reports, backup/restore scripts, bulk import, groups, tags, domain update, OpenAPI docs, 146 tests pass). Security audit completed — **28/28 issues fixed**.
+Status: **Phases 1–9 implemented** (Go backend, REST API, JWT auth, SQLite, HTTPS + multi-provider CT scanners, Bootstrap 5 web UI, cron notifications, inventory reports, backup/restore scripts, bulk import, groups, tags, domain update, OpenAPI docs). All-valid-certificate discovery with normalized-DN dedup (CertSpotter + ctlogs.dev). Security audit completed — **28/28 issues fixed**.
 
 ## Quick nav
 

@@ -65,6 +65,8 @@ HTTPS (5s) → CT (10s) sequentially = up to 15s per domain. With 10 concurrent 
 
 **Why:** Halves per-domain scan time for domains where both protocols are enabled.
 
+**Status: ✅ Done** — superseded by the CT multi-provider aggregator (`internal/ctsearch`). CT providers (CertSpotter, ctlogs.dev) are queried **concurrently** behind a shared 1 QPS limiter with failover, per-provider cooldown, and partial-results-on-deadline, which removes the single slow-provider bottleneck; sequential HTTPS→CT ordering is retained.
+
 **Effort:** 3–4h
 
 ---

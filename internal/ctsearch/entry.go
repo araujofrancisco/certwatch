@@ -8,7 +8,7 @@ import (
 )
 
 // Entry is a normalized certificate record returned by a Certificate
-// Transparency search provider. Every provider (crt.sh, CertSpotter, ...) is
+// Transparency search provider. Every provider (CertSpotter, ctlogs.dev, ...) is
 // normalized into this shape so the rest of the system never depends on a
 // single vendor's JSON schema.
 type Entry struct {
@@ -23,7 +23,7 @@ type Entry struct {
 	// NotBefore / NotAfter bound the certificate validity window.
 	NotBefore time.Time `json:"not_before"`
 	NotAfter  time.Time `json:"not_after"`
-	// Source identifies which provider returned this entry (e.g. "crt.sh").
+	// Source identifies which provider returned this entry (e.g. "CertSpotter").
 	Source string `json:"source"`
 
 	// Subject is the display subject: the first SAN when present, else CN.
@@ -36,9 +36,11 @@ type Entry struct {
 }
 
 // populate derives display fields that callers could otherwise compute
-// themselves (status, subject, days left). Callers that need stricter
-// semantics should use Status()/DaysUntil() directly instead.
+// themselves (status, subject, days left) and canonicalizes the issuer DN so
+// dedup keys are stable across providers. Callers that need stricter semantics
+// should use Status()/DaysUntil() directly instead.
 func (e *Entry) populate(now time.Time) {
+	e.Issuer = NormalizeDN(e.Issuer)
 	e.Subject = e.SubjectName()
 	e.Status = e.StatusAt(now)
 	e.DaysLeft = e.DaysUntil(now)
