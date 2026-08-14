@@ -17,6 +17,8 @@ auth:
 discovery:
   scan_interval: "6h"
   timeout: "30s"
+  max_concurrent_scans: 3
+  queue_size: 100
 
 notifications:
   smtp:

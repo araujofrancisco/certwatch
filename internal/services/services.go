@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"time"
 
 	"github.com/araujofrancisco/certwatch/internal/auth"
 	"github.com/araujofrancisco/certwatch/internal/discovery"
@@ -14,6 +15,7 @@ type DomainService struct {
 	scanners      *discovery.Registry
 	tags          repository.TagRepository
 	backgroundCtx context.Context
+	scanQueue     *scanQueue
 }
 
 type CertificateService struct {
@@ -26,8 +28,32 @@ type AuthService struct {
 	auth  *auth.Authenticator
 }
 
-func NewDomainService(domains repository.DomainRepository, certs repository.CertificateRepository, scanners *discovery.Registry, tags repository.TagRepository, backgroundCtx context.Context) *DomainService {
-	return &DomainService{domains: domains, certs: certs, scanners: scanners, tags: tags, backgroundCtx: backgroundCtx}
+func NewDomainService(domains repository.DomainRepository, certs repository.CertificateRepository, scanners *discovery.Registry, tags repository.TagRepository, backgroundCtx context.Context, maxConcurrent, queueSize int, scanTimeout time.Duration) *DomainService {
+	s := &DomainService{domains: domains, certs: certs, scanners: scanners, tags: tags, backgroundCtx: backgroundCtx}
+	s.scanQueue = newScanQueue(maxConcurrent, queueSize, scanTimeout, s.ScanDomain)
+	return s
+}
+
+// EnqueueScan queues a background scan for the given domain. priority marks a
+// manual "Scan Now" request that bypasses the low-priority (bulk/periodic) queue.
+func (s *DomainService) EnqueueScan(ctx context.Context, domainID int64, priority bool) {
+	s.scanQueue.EnqueueScan(ctx, domainID, priority)
+}
+
+// StopScanQueue shuts down the background scan queue, blocking until in-flight
+// scans complete (honoring their contexts).
+func (s *DomainService) StopScanQueue() {
+	if s.scanQueue != nil {
+		s.scanQueue.Stop()
+	}
+}
+
+// ScanQueueStats reports the current size of the pending and in-flight scan queues.
+func (s *DomainService) ScanQueueStats() map[string]int {
+	if s.scanQueue == nil {
+		return map[string]int{"pending": 0, "inflight": 0}
+	}
+	return map[string]int{"pending": s.scanQueue.Pending(), "inflight": s.scanQueue.InFlight()}
 }
 
 func NewCertificateService(certs repository.CertificateRepository, domains repository.DomainRepository) *CertificateService {

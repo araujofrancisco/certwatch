@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"math/rand"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/araujofrancisco/certwatch/internal/discovery"
@@ -242,10 +241,6 @@ func (s *DomainService) ensureTags(names []string) ([]*models.Tag, error) {
 	return result, nil
 }
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 func randomTagColor() string {
 	palette := []string{
 		"#0d6efd", "#6610f2", "#6f42c1", "#d63384", "#dc3545",
@@ -265,6 +260,7 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 		Fingerprint: result.Fingerprint,
 		Protocol:    result.Protocol,
 		Status:      result.Status,
+		SANs:        result.SANs,
 		LastChecked: time.Now(),
 	}
 
@@ -301,6 +297,7 @@ func (s *DomainService) updateCert(existing *models.Certificate, result *discove
 	existing.NotBefore = result.NotBefore
 	existing.Issuer = result.Issuer
 	existing.Subject = result.Subject
+	existing.SANs = result.SANs
 	if result.Fingerprint != "" {
 		existing.Fingerprint = result.Fingerprint
 	}
@@ -393,13 +390,7 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 
 		res.Status = "created"
 
-		go func(id int64) {
-			ctx, cancel := context.WithTimeout(s.backgroundCtx, 30*time.Second)
-			defer cancel()
-			if _, err := s.ScanDomain(ctx, id, 30*time.Second); err != nil {
-				slog.Error("bulk import background scan failed", "domain_id", id, "error", err)
-			}
-		}(d.ID)
+		s.EnqueueScan(s.backgroundCtx, d.ID, false)
 
 		summary.Created++
 		results = append(results, res)
@@ -409,42 +400,19 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 	return &BulkAddResponse{Results: results, Summary: summary}
 }
 
-func (s *DomainService) ScanAllDomains(ctx context.Context, timeout time.Duration) ([]*models.Certificate, error) {
+func (s *DomainService) ScanAllDomains(ctx context.Context) error {
 	domains, err := s.domains.ListEnabled()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	type result struct {
-		cert *models.Certificate
-	}
-	results := make(chan result, len(domains))
-	sem := make(chan struct{}, 10)
 
-	var wg sync.WaitGroup
+	// Enqueue every enabled domain for a background scan. The queue worker pool
+	// provides the concurrency cap and deduplication; this call only submits
+	// the work and returns.
 	for _, d := range domains {
-		wg.Add(1)
-		go func(id int64) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			cert, err := s.ScanDomain(ctx, id, timeout)
-			if err != nil {
-				return
-			}
-			results <- result{cert: cert}
-		}(d.ID)
+		s.EnqueueScan(ctx, d.ID, false)
 	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	var certs []*models.Certificate
-	for r := range results {
-		certs = append(certs, r.cert)
-	}
-	return certs, nil
+	return nil
 }
 
 func isValidDomain(domain string) bool {

@@ -24,10 +24,10 @@
 <h3>Certificate History</h3>
 <div class="table-responsive">
   <table class="table table-striped" id="certsHistoryTable">
-    <thead><tr><th>Subject</th><th>Issuer</th><th>Not Before</th><th>Not After</th><th>Days</th><th>Status</th></tr></thead>
+    <thead><tr><th>Subject</th><th>Issuer</th><th>Serial</th><th>SANs</th><th>Not Before</th><th>Not After</th><th>Days</th><th>Status</th></tr></thead>
     <tbody id="certsBody">
-      <tr class="skeleton-row"><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
-      <tr class="skeleton-row"><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
+      <tr class="skeleton-row"><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:30%">&nbsp;</span></td><td><span class="skeleton" style="width:55%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
+      <tr class="skeleton-row"><td><span class="skeleton" style="width:45%">&nbsp;</span></td><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:30%">&nbsp;</span></td><td><span class="skeleton" style="width:50%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:35%">&nbsp;</span></td><td><span class="skeleton" style="width:20%">&nbsp;</span></td><td><span class="skeleton" style="width:25%">&nbsp;</span></td></tr>
     </tbody>
   </table>
 </div>
@@ -76,9 +76,12 @@ async function loadCertificates() {
   const tbody = document.getElementById('certsBody');
   certs.forEach(c => {
     const days = daysUntil(c.not_after);
+    const sans = (c.sans || []).join(', ');
     tbody.innerHTML += `<tr>
       <td>${escapeHtml(c.subject)}</td>
       <td>${escapeHtml(c.issuer)}</td>
+      <td class="text-muted text-break" style="font-size:0.85rem">${escapeHtml(c.serial || '-')}</td>
+      <td class="text-muted">${escapeHtml(sans || '-')}</td>
       <td>${new Date(c.not_before).toLocaleDateString()}</td>
       <td>${new Date(c.not_after).toLocaleDateString()}</td>
       <td class="${statusClass(c.status)}">${days}</td>
@@ -89,8 +92,20 @@ async function loadCertificates() {
 }
 async function scanDomain(id) {
   await apiFetch('/api/domains/' + id + '/scan', {method: 'POST'});
-  showToast('Scan completed', 'success');
-  loadCertificates();
+  showToast('Scan queued', 'success');
+  // Poll until the queued scan produces fresh results.
+  let attempts = 0;
+  const poll = setInterval(async () => {
+    attempts++;
+    const data = await apiFetch('/api/domains/' + id + '/certificates');
+    if (data && data.certificates && data.certificates.length > 0) {
+      clearInterval(poll);
+      loadCertificates();
+    } else if (attempts > 20) {
+      clearInterval(poll);
+      loadCertificates();
+    }
+  }, 1500);
 }
 async function deleteDomain(id) {
   const ok = await showConfirm('Delete Domain', 'Are you sure you want to delete this domain? This cannot be undone.');

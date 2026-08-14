@@ -365,24 +365,26 @@ paths:
       tags: [Domains]
       summary: Scan a domain
       description: |
-        Triggers an immediate certificate scan across all protocols in priority order:
-        HTTPS (5s) -> CT (10s) -> SMTP/IMAP/POP3/LDAP/FTP/TLS (2s each).
-        First success wins.
+        Enqueues an immediate certificate scan across all protocols in priority order:
+        HTTPS (5s) -> CT (10s). First success wins. The scan runs asynchronously
+        through the background scan queue; this endpoint returns immediately.
+        Poll GET /api/domains/{id}/certificates for results.
       operationId: scanDomain
       security:
         - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/domainId"
       responses:
-        "200":
-          description: Scan succeeded
+        "202":
+          description: Scan queued
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  certificate:
-                    $ref: "#/components/schemas/Certificate"
+                  status:
+                    type: string
+                    example: queued
         "400":
           description: Invalid domain ID
           content:
@@ -393,25 +395,42 @@ paths:
                 error: invalid domain id
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "502":
-          description: Scan completed with errors (error cert was saved)
+        "404":
+          description: Domain not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: domain not found
+
+  /api/scanqueue:
+    get:
+      tags: [Domains]
+      summary: Scan queue status
+      description: |
+        Returns the number of scans currently pending in the queue and in flight.
+      operationId: scanQueueStatus
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Queue statistics
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  certificate:
-                    $ref: "#/components/schemas/Certificate"
-                  scan_error:
-                    type: string
-                    description: Error message from scanner
-                    example: "all scanners failed: connection refused"
-        "500":
-          description: All scanners failed, no certificate saved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                  pending:
+                    type: integer
+                    description: Scans waiting to be dispatched
+                    example: 3
+                  inflight:
+                    type: integer
+                    description: Scans currently being executed
+                    example: 2
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/certificates:
     get:
@@ -1104,6 +1123,12 @@ components:
           type: string
           enum: [valid, expired, error]
           description: Certificate status
+        sans:
+          type: array
+          items:
+            type: string
+          description: DNS names covered by the certificate
+          example: ["example.com", "www.example.com"]
         last_checked:
           type: string
           format: date-time

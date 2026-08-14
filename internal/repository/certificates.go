@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,16 +10,31 @@ import (
 	"github.com/araujofrancisco/certwatch/internal/models"
 )
 
+func encodeSANs(sans []string) (string, error) {
+	if len(sans) == 0 {
+		return "", nil
+	}
+	b, err := json.Marshal(sans)
+	if err != nil {
+		return "", fmt.Errorf("encode sans: %w", err)
+	}
+	return string(b), nil
+}
+
 type certRepo struct {
 	db *database.DB
 }
 
 func (r *certRepo) Create(c *models.Certificate) error {
+	sans, err := encodeSANs(c.SANs)
+	if err != nil {
+		return err
+	}
 	res, err := r.db.Exec(
-		`INSERT INTO certificates (domain_id, issuer, subject, serial, not_before, not_after, fingerprint, protocol, status, last_checked)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO certificates (domain_id, issuer, subject, serial, not_before, not_after, fingerprint, protocol, status, sans, last_checked)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.DomainID, c.Issuer, c.Subject, c.Serial, c.NotBefore, c.NotAfter,
-		c.Fingerprint, c.Protocol, c.Status, c.LastChecked,
+		c.Fingerprint, c.Protocol, c.Status, sans, c.LastChecked,
 	)
 	if err != nil {
 		return fmt.Errorf("create certificate: %w", err)
@@ -31,7 +47,7 @@ func (r *certRepo) Create(c *models.Certificate) error {
 func (r *certRepo) FindByID(id int64) (*models.Certificate, error) {
 	row := r.db.QueryRow(
 		`SELECT id, domain_id, issuer, subject, serial, not_before, not_after,
-		        fingerprint, protocol, status, last_checked, created_at, updated_at
+		        fingerprint, protocol, status, sans, last_checked, created_at, updated_at
 		 FROM certificates WHERE id = ?`, id,
 	)
 	return scanCert(row)
@@ -40,7 +56,7 @@ func (r *certRepo) FindByID(id int64) (*models.Certificate, error) {
 func (r *certRepo) ListByDomainID(domainID int64) ([]*models.Certificate, error) {
 	rows, err := r.db.Query(
 		`SELECT id, domain_id, issuer, subject, serial, not_before, not_after,
-		        fingerprint, protocol, status, last_checked, created_at, updated_at
+		        fingerprint, protocol, status, sans, last_checked, created_at, updated_at
 		 FROM certificates WHERE domain_id = ? ORDER BY not_after DESC`, domainID,
 	)
 	if err != nil {
@@ -53,7 +69,7 @@ func (r *certRepo) ListByDomainID(domainID int64) ([]*models.Certificate, error)
 func (r *certRepo) LatestForDomain(domainID int64) (*models.Certificate, error) {
 	row := r.db.QueryRow(
 		`SELECT id, domain_id, issuer, subject, serial, not_before, not_after,
-		        fingerprint, protocol, status, last_checked, created_at, updated_at
+		        fingerprint, protocol, status, sans, last_checked, created_at, updated_at
 		 FROM certificates WHERE domain_id = ? ORDER BY last_checked DESC LIMIT 1`, domainID,
 	)
 	return scanCert(row)
@@ -94,7 +110,7 @@ func (r *certRepo) ListFiltered(filter models.CertFilter) ([]*models.Certificate
 	}
 
 	query := `SELECT id, domain_id, issuer, subject, serial, not_before, not_after,
-	          fingerprint, protocol, status, last_checked, created_at, updated_at
+	          fingerprint, protocol, status, sans, last_checked, created_at, updated_at
 	         FROM certificates` + where + ` ORDER BY not_after DESC`
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d OFFSET %d", filter.Limit, filter.Offset())
@@ -152,7 +168,7 @@ func (r *certRepo) CountFiltered(filter models.CertFilter) (int, error) {
 func (r *certRepo) List() ([]*models.Certificate, error) {
 	rows, err := r.db.Query(
 		`SELECT id, domain_id, issuer, subject, serial, not_before, not_after,
-		        fingerprint, protocol, status, last_checked, created_at, updated_at
+		        fingerprint, protocol, status, sans, last_checked, created_at, updated_at
 		 FROM certificates ORDER BY not_after DESC`,
 	)
 	if err != nil {
@@ -163,12 +179,16 @@ func (r *certRepo) List() ([]*models.Certificate, error) {
 }
 
 func (r *certRepo) Update(c *models.Certificate) error {
-	_, err := r.db.Exec(
+	sans, err := encodeSANs(c.SANs)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(
 		`UPDATE certificates SET issuer = ?, subject = ?, serial = ?, not_before = ?, not_after = ?,
-		     fingerprint = ?, protocol = ?, status = ?, last_checked = ?, updated_at = CURRENT_TIMESTAMP
+		     fingerprint = ?, protocol = ?, status = ?, sans = ?, last_checked = ?, updated_at = CURRENT_TIMESTAMP
 		 WHERE id = ?`,
 		c.Issuer, c.Subject, c.Serial, c.NotBefore, c.NotAfter,
-		c.Fingerprint, c.Protocol, c.Status, c.LastChecked, c.ID,
+		c.Fingerprint, c.Protocol, c.Status, sans, c.LastChecked, c.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update certificate: %w", err)
@@ -223,9 +243,10 @@ func (r *certRepo) Delete(id int64) error {
 func scanCert(s scanner) (*models.Certificate, error) {
 	var c models.Certificate
 	var notBefore, notAfter, lastChecked, createdAt, updatedAt sql.NullTime
+	var sans string
 	err := s.Scan(&c.ID, &c.DomainID, &c.Issuer, &c.Subject, &c.Serial,
 		&notBefore, &notAfter, &c.Fingerprint, &c.Protocol, &c.Status,
-		&lastChecked, &createdAt, &updatedAt)
+		&sans, &lastChecked, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("certificate not found")
@@ -246,6 +267,11 @@ func scanCert(s scanner) (*models.Certificate, error) {
 	}
 	if updatedAt.Valid {
 		c.UpdatedAt = updatedAt.Time
+	}
+	if sans != "" {
+		if err := json.Unmarshal([]byte(sans), &c.SANs); err != nil {
+			return nil, fmt.Errorf("decode sans: %w", err)
+		}
 	}
 	return &c, nil
 }

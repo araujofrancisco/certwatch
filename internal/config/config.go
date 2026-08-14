@@ -40,8 +40,10 @@ type AuthConfig struct {
 }
 
 type DiscoveryConfig struct {
-	ScanInterval string `yaml:"scan_interval"`
-	Timeout      string `yaml:"timeout"`
+	ScanInterval      string `yaml:"scan_interval"`
+	Timeout           string `yaml:"timeout"`
+	MaxConcurrentScans int   `yaml:"max_concurrent_scans"`
+	QueueSize          int   `yaml:"queue_size"`
 }
 
 type NotificationsConfig struct {
@@ -90,8 +92,10 @@ func Default() Config {
 			TokenTTL: "24h",
 		},
 		Discovery: DiscoveryConfig{
-			ScanInterval: "6h",
-			Timeout:      "30s",
+			ScanInterval:      "6h",
+			Timeout:           "30s",
+			MaxConcurrentScans: 3,
+			QueueSize:          100,
 		},
 		Notifications: NotificationsConfig{
 			SMTP: SMTPConfig{
@@ -160,6 +164,16 @@ func applyEnvOverrides(cfg Config) Config {
 	}
 	if v := os.Getenv("CERTWATCH_DISCOVERY_TIMEOUT"); v != "" {
 		cfg.Discovery.Timeout = v
+	}
+	if v := os.Getenv("CERTWATCH_DISCOVERY_MAX_CONCURRENT_SCANS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Discovery.MaxConcurrentScans = n
+		}
+	}
+	if v := os.Getenv("CERTWATCH_DISCOVERY_QUEUE_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Discovery.QueueSize = n
+		}
 	}
 	if v := os.Getenv("CERTWATCH_SMTP_HOST"); v != "" {
 		cfg.Notifications.SMTP.Host = v

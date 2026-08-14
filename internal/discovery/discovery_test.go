@@ -96,13 +96,74 @@ func TestScannerStubs(t *testing.T) {
 		NewLDAPScanner(timeout),
 		NewFTPScanner(timeout),
 		NewTLSScanner(timeout),
-		NewCTScanner(timeout),
 	}
 	for _, s := range scanners {
 		_, err := s.Scan(context.Background(), "example.com")
 		if err == nil {
 			t.Errorf("%s scanner: expected error, got nil", s.Protocol())
 		}
+	}
+}
+
+func TestCTScannerImplementsMultiScanner(t *testing.T) {
+	s := NewCTScanner(100 * time.Millisecond)
+	ms, ok := s.(MultiScanner)
+	if !ok {
+		t.Fatal("expected NewCTScanner to implement MultiScanner")
+	}
+	if ms.Protocol() != "ct" {
+		t.Errorf("expected ct protocol, got %s", ms.Protocol())
+	}
+}
+
+func TestCTScannerWithClient(t *testing.T) {
+	s := NewCTScannerWithClient(nil, 100*time.Millisecond)
+	if _, ok := s.(MultiScanner); !ok {
+		t.Error("expected NewCTScannerWithClient to implement MultiScanner")
+	}
+}
+
+func TestHTTPSScannerSANs(t *testing.T) {
+	certPEM, keyPEM := generateTestCertPair(t)
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		tlsConn := conn.(*tls.Conn)
+		_ = tlsConn.Handshake()
+		conn.Close()
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	s := NewHTTPSScanner(5 * time.Second)
+	result, err := s.Scan(context.Background(), ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, name := range result.SANs {
+		if name == "test.example.com" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected test.example.com in SANs, got %v", result.SANs)
 	}
 }
 

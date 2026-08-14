@@ -45,6 +45,7 @@ type Certificate struct {
 	Fingerprint string    `json:"fingerprint"`
 	Protocol    string    `json:"protocol"`
 	Status      string    `json:"status"`
+	SANs        []string  `json:"sans"`
 	LastChecked time.Time `json:"last_checked"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

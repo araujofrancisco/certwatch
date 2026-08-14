@@ -107,6 +107,15 @@ func (q *scanQueue) worker() {
 			continue
 		}
 
+		// When the context was already cancelled while we waited for the
+		// semaphore, bail deterministically instead of running the scan.
+		if err := task.ctx.Err(); err != nil {
+			<-q.sem // release semaphore
+			q.unmark(task.domainID)
+			q.finish(task, nil, err)
+			continue
+		}
+
 		cert, err := q.scan(task.ctx, task.domainID, q.timeout)
 		<-q.sem // release semaphore
 		q.unmark(task.domainID)
@@ -178,9 +187,13 @@ func (q *scanQueue) EnqueueScan(ctx context.Context, domainID int64, priority bo
 
 // Stop shuts down the queue. Workers finish in-flight scans immediately
 // (honoring their context) but will not pick up new tasks. It blocks until
-// all workers exit.
+// all workers exit. Stop is idempotent: calling it more than once is safe.
 func (q *scanQueue) Stop() {
 	q.mu.Lock()
+	if q.closed {
+		q.mu.Unlock()
+		return
+	}
 	q.closed = true
 	q.mu.Unlock()
 

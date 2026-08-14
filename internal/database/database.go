@@ -73,7 +73,31 @@ func (db *DB) Migrate() error {
 		}
 	}
 
+	// Idempotent additive migrations for existing databases created before a
+	// column was introduced (CREATE TABLE IF NOT EXISTS does not alter them).
+	if err := addColumnIfMissing(db, "certificates", "sans", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
 	slog.Info("database migrations complete")
+	return nil
+}
+
+// addColumnIfMissing adds a column to a table when it does not already exist.
+// SQLite does not support "ADD COLUMN IF NOT EXISTS", so the operation is
+// attempted and the duplicate-column error is ignored.
+func addColumnIfMissing(db *DB, table, column, definition string) error {
+	row := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+	if count > 0 {
+		return nil
+	}
+	if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)); err != nil {
+		return fmt.Errorf("add column %s.%s: %w", table, column, err)
+	}
 	return nil
 }
 
@@ -121,6 +145,7 @@ CREATE TABLE IF NOT EXISTS certificates (
     fingerprint   TEXT    NOT NULL DEFAULT '',
     protocol      TEXT    NOT NULL DEFAULT 'https',
     status        TEXT    NOT NULL DEFAULT 'unknown',
+    sans          TEXT    NOT NULL DEFAULT '',
     last_checked  DATETIME,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP

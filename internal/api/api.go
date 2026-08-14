@@ -46,6 +46,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("PUT /api/domains/{id}", rateLimit(authMiddleware(http.HandlerFunc(h.updateDomain))))
 	mux.Handle("DELETE /api/domains/{id}", rateLimit(authMiddleware(http.HandlerFunc(h.deleteDomain))))
 	mux.Handle("POST /api/domains/{id}/scan", rateLimit(authMiddleware(http.HandlerFunc(h.scanDomain))))
+	mux.Handle("GET /api/scanqueue", readLimit(authMiddleware(http.HandlerFunc(h.scanQueueStatus))))
 
 	mux.Handle("GET /api/certificates", readLimit(authMiddleware(http.HandlerFunc(h.listCertificates))))
 	mux.Handle("DELETE /api/certificates/errors", rateLimit(authMiddleware(http.HandlerFunc(h.purgeCertificateErrors))))

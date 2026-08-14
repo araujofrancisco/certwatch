@@ -1,12 +1,10 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/araujofrancisco/certwatch/internal/models"
 	"github.com/araujofrancisco/certwatch/internal/services"
@@ -83,13 +81,7 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to re-fetch domain", "domain_id", domain.ID, "error", err)
 	}
 
-	go func(id int64) {
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-		defer cancel()
-		if _, err := h.domains.ScanDomain(ctx, id, 30*time.Second); err != nil {
-			slog.Error("background scan failed", "domain_id", id, "error", err)
-		}
-	}(domain.ID)
+	h.domains.EnqueueScan(r.Context(), domain.ID, false)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"domain": domain})
 }
@@ -202,16 +194,18 @@ func (h *Handler) scanDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cert, err := h.domains.ScanDomain(r.Context(), id, 30*time.Second)
-	if err != nil {
-		if cert != nil {
-			writeJSON(w, http.StatusBadGateway,
-				map[string]any{"certificate": cert, "scan_error": err.Error()})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if _, err := h.domains.GetDomain(id); err != nil {
+		writeError(w, http.StatusNotFound, "domain not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"certificate": cert})
+	// Manual "Scan Now": enqueue as high priority and return immediately.
+	// The scan runs in the background queue; results can be polled via the
+	// certificate endpoints.
+	h.domains.EnqueueScan(r.Context(), id, true)
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued"})
+}
+
+func (h *Handler) scanQueueStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.domains.ScanQueueStats())
 }

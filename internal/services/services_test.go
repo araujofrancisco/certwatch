@@ -38,7 +38,7 @@ func setupServices(t *testing.T) (*DomainService, *CertificateService, *AuthServ
 	scannerReg := discovery.NewRegistry()
 	scannerReg.Register(discovery.NewHTTPSScanner(0))
 
-	return NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, context.Background()),
+	return NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, context.Background(), 3, 100, 30*time.Second),
 		NewCertificateService(certRepo, domainRepo),
 		NewAuthService(userRepo, nil)
 }
@@ -179,13 +179,139 @@ func TestBulkAddDomains(t *testing.T) {
 
 func TestScanAllDomainsEmpty(t *testing.T) {
 	svc, _, _ := setupServices(t)
-	certs, err := svc.ScanAllDomains(context.Background(), 0)
+	if err := svc.ScanAllDomains(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type fakeScanner struct {
+	result *discovery.Result
+	err    error
+}
+
+func (f *fakeScanner) Protocol() string { return "https" }
+
+func (f *fakeScanner) Scan(ctx context.Context, domain string) (*discovery.Result, error) {
+	return f.result, f.err
+}
+
+func TestScanDomainSavesSANs(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(certs) != 0 {
-		t.Errorf("expected 0 certs, got %d", len(certs))
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	reg := discovery.NewRegistry()
+	reg.Register(&fakeScanner{result: &discovery.Result{
+		Subject:     "example.com",
+		Issuer:      "CA",
+		Serial:      "01",
+		NotBefore:   time.Now().Add(-time.Hour),
+		NotAfter:    time.Now().Add(24 * time.Hour),
+		Fingerprint: "abc123",
+		Protocol:    "https",
+		Status:      "valid",
+		SANs:        []string{"example.com", "www.example.com"},
+	}})
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cert, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cert.SANs) != 2 {
+		t.Fatalf("expected 2 SANs, got %v", cert.SANs)
+	}
+
+	got, err := svc.GetDomain(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs, err := svc.certs.ListByDomainID(got.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certs) != 1 {
+		t.Fatalf("expected 1 cert, got %d", len(certs))
+	}
+	if len(certs[0].SANs) != 2 || certs[0].SANs[0] != "example.com" {
+		t.Errorf("SANs did not round-trip through repository: %v", certs[0].SANs)
+	}
+}
+
+func TestEnqueueScanRunsDomain(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	reg := discovery.NewRegistry()
+	reg.Register(&fakeScanner{result: &discovery.Result{
+		Subject:     "example.com",
+		Issuer:      "CA",
+		Serial:      "01",
+		NotBefore:   time.Now().Add(-time.Hour),
+		NotAfter:    time.Now().Add(24 * time.Hour),
+		Fingerprint: "def456",
+		Protocol:    "https",
+		Status:      "valid",
+		SANs:        []string{"example.com"},
+	}})
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 1, 10, time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.EnqueueScan(context.Background(), d.ID, true)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		certs, err := certRepo.ListByDomainID(d.ID)
+		if err == nil && len(certs) > 0 {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("enqueued scan did not produce a certificate")
 }
 
 func TestListDomainsFiltered(t *testing.T) {

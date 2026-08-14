@@ -124,7 +124,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, ctx)
+	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, ctx, cfg.Discovery.MaxConcurrentScans, cfg.Discovery.QueueSize, scanTimeout)
 	certSvc := services.NewCertificateService(certRepo, domainRepo)
 
 	rateLimiter := middleware.NewRateLimiter(10, time.Minute)
@@ -172,6 +172,7 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("shutdown error", "error", err)
 	}
+	domainSvc.StopScanQueue()
 	rateLimiter.Stop()
 	return nil
 }
@@ -186,12 +187,11 @@ func runBackgroundScan(ctx context.Context, svc *services.DomainService, certSvc
 			return
 		case <-ticker.C:
 			slog.Info("starting background scan")
-			certs, err := svc.ScanAllDomains(ctx, timeout)
-			if err != nil {
+			if err := svc.ScanAllDomains(ctx); err != nil {
 				slog.Error("background scan error", "error", err)
 				continue
 			}
-			slog.Info("background scan complete", "certificates_found", len(certs))
+			slog.Info("background scan queued", "queued", svc.ScanQueueStats()["pending"])
 
 			// Safety net: purge all expired certificates that were not
 			// caught by the renewal-triggered cleanup (e.g. domains whose

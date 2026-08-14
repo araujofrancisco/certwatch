@@ -68,6 +68,7 @@ func (s *httpsScanner) Scan(ctx context.Context, domain string) (*Result, error)
 		Fingerprint: fingerprint,
 		Protocol:    "https",
 		Status:      status,
+		SANs:        leaf.DNSNames,
 	}, nil
 }
 
