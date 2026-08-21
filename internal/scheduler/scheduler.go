@@ -95,16 +95,102 @@ func (e CronExpr) Matches(t time.Time) bool {
 	if e.Hour >= 0 && t.Hour() != e.Hour {
 		return false
 	}
-	if e.Day >= 0 && t.Day() != e.Day {
+	if e.Month >= 0 && int(t.Month()) != e.Month {
 		return false
 	}
-	if e.Month >= 0 && int(t.Month()) != e.Month {
+	// Standard cron semantics: when both day-of-month and day-of-week are
+	// restricted, a match on either one selects the day.
+	if e.Day >= 0 && e.Weekday >= 0 {
+		return t.Day() == e.Day || int(t.Weekday()) == e.Weekday
+	}
+	if e.Day >= 0 && t.Day() != e.Day {
 		return false
 	}
 	if e.Weekday >= 0 && int(t.Weekday()) != e.Weekday {
 		return false
 	}
 	return true
+}
+
+// Next returns the first minute strictly after 'from' that matches the
+// expression, evaluated in loc (UTC when nil). ok is false when no match
+// exists within a 4-year search horizon.
+func (e CronExpr) Next(from time.Time, loc *time.Location) (time.Time, bool) {
+	if loc == nil {
+		loc = time.UTC
+	}
+	t := from.In(loc).Truncate(time.Minute).Add(time.Minute)
+	limit := t.AddDate(4, 0, 0)
+
+	for t.Before(limit) {
+		// Month mismatch: nothing in this month can match.
+		if e.Month >= 0 && int(t.Month()) != e.Month {
+			t = dayStart(t).AddDate(0, 0, 1)
+			continue
+		}
+		// Day fields. When both Day and Weekday are restricted, cron
+		// semantics OR them: a day matching either constraint is selected.
+		dayRestricted := e.Day >= 0
+		weekdayRestricted := e.Weekday >= 0
+		switch {
+		case dayRestricted && weekdayRestricted:
+			if t.Day() != e.Day && int(t.Weekday()) != e.Weekday {
+				t = dayStart(t).AddDate(0, 0, 1)
+				continue
+			}
+		case dayRestricted:
+			if t.Day() != e.Day {
+				t = dayStart(t).AddDate(0, 0, 1)
+				continue
+			}
+		case weekdayRestricted:
+			if int(t.Weekday()) != e.Weekday {
+				t = dayStart(t).AddDate(0, 0, 1)
+				continue
+			}
+		}
+		// Hour.
+		if e.Hour >= 0 && t.Hour() != e.Hour {
+			if t.Hour() > e.Hour {
+				t = dayStart(t).AddDate(0, 0, 1)
+			} else {
+				minute := 0
+				if e.Minute >= 0 {
+					minute = e.Minute
+				}
+				t = time.Date(t.Year(), t.Month(), t.Day(), e.Hour, minute, 0, 0, t.Location())
+			}
+			continue
+		}
+		// Minute.
+		if e.Minute >= 0 && t.Minute() != e.Minute {
+			hour := t.Hour()
+			if t.Minute() > e.Minute {
+				if e.Hour >= 0 {
+					// Fixed hour already matched but its target minute has
+					// passed (only possible via minute-stepping): move on.
+					t = dayStart(t).AddDate(0, 0, 1)
+					continue
+				}
+				hour++
+			}
+			t = time.Date(t.Year(), t.Month(), t.Day(), hour, e.Minute, 0, 0, t.Location())
+			continue
+		}
+		// Day selection already applied above (with OR semantics); here we
+		// only need to confirm month/hour/minute.
+		if (e.Month < 0 || int(t.Month()) == e.Month) &&
+			(e.Hour < 0 || t.Hour() == e.Hour) &&
+			(e.Minute < 0 || t.Minute() == e.Minute) {
+			return t, true
+		}
+		t = t.Add(time.Minute)
+	}
+	return limit, false
+}
+
+func dayStart(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
 func (s *Scheduler) Add(job *Job) {
@@ -124,28 +210,52 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) runJob(ctx context.Context, job *Job) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	lastRun := make(map[string]time.Time)
+	// Sleep until each job's next cron match instead of polling on a ticker.
+	var lastRun time.Time
 
 	for {
+		next, ok := job.Expr.Next(time.Now(), job.Timezone)
+		if !ok {
+			// No future match within the search horizon; nothing to schedule.
+			return
+		}
+
+		timer := time.NewTimer(time.Until(next))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case t := <-ticker.C:
+		case fired := <-timer.C:
+			// Guard against firing early (timer truncation, clock adjustments):
+			// wait out any remaining gap before running.
+			if delay := next.Sub(fired); delay > 0 {
+				if !sleepCtx(ctx, delay) {
+					return
+				}
+				fired = next
+			}
+			t := fired
 			if job.Timezone != nil {
 				t = t.In(job.Timezone)
 			}
-			if job.Expr.Matches(t) {
-				last := lastRun[job.Name]
-				if t.Truncate(time.Minute).Equal(last.Truncate(time.Minute)) {
-					continue
-				}
-				lastRun[job.Name] = t
-				slog.Info("running scheduled job", "job", job.Name, "time", t.Format(time.RFC3339))
-				job.Handler(ctx)
+			if t.Truncate(time.Minute).Equal(lastRun.Truncate(time.Minute)) {
+				continue
 			}
+			lastRun = t
+			slog.Info("running scheduled job", "job", job.Name, "time", t.Format(time.RFC3339))
+			job.Handler(ctx)
 		}
+	}
+}
+
+// sleepCtx sleeps for d, returning false if ctx was cancelled first.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }

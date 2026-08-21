@@ -60,27 +60,24 @@ func (db *DB) Close() error {
 func (db *DB) Migrate() error {
 	slog.Info("running database migrations")
 
-	migrations := []string{
-		createUsersTable,
-		createDomainsTable,
-		createCertificatesTable,
-		createTagsTable,
-		createDomainTagsTable,
-		// Removed with the unused NotificationProfile repository; drops the
-		// orphaned table from databases created by older versions.
-		`DROP TABLE IF EXISTS notification_profiles;`,
-	}
-
-	for i, m := range migrations {
-		if _, err := db.Exec(m); err != nil {
-			return fmt.Errorf("migration %d: %w", i+1, err)
-		}
-	}
-
-	// Idempotent additive migrations for existing databases created before a
-	// column was introduced (CREATE TABLE IF NOT EXISTS does not alter them).
-	if err := addColumnIfMissing(db, "certificates", "sans", "TEXT NOT NULL DEFAULT ''"); err != nil {
+	if err := db.ensureSchemaVersionTable(); err != nil {
 		return err
+	}
+
+	current, err := db.currentSchemaVersion()
+	if err != nil {
+		return err
+	}
+
+	for _, m := range migrations {
+		if m.version <= current {
+			continue
+		}
+		if err := db.applyMigration(m); err != nil {
+			return err
+		}
+		slog.Info("applied migration", "version", m.version, "name", m.name)
+		current = m.version
 	}
 
 	// Deduplicate certificate rows that the pre-normalization scanner wrote
@@ -91,7 +88,129 @@ func (db *DB) Migrate() error {
 		return err
 	}
 
-	slog.Info("database migrations complete")
+	slog.Info("database migrations complete", "version", current)
+	return nil
+}
+
+type migration struct {
+	version int
+	name    string
+	stmts   []string
+	// fn is an optional custom step (e.g. guarded ALTER TABLE) executed in
+	// the same transaction as stmts.
+	fn func(tx *sql.Tx) error
+}
+
+// migrations is the ordered schema history. Every statement must be safe to
+// re-run against databases created before version tracking existed (they all
+// start from version 0): CREATE TABLE IF NOT EXISTS, DROP TABLE IF EXISTS,
+// CREATE INDEX IF NOT EXISTS, or the guarded addColumnIfMissing helper.
+var migrations = []migration{
+	{
+		version: 1,
+		name:    "core-tables",
+		stmts: []string{
+			createUsersTable,
+			createDomainsTable,
+			createCertificatesTable,
+			createTagsTable,
+			createDomainTagsTable,
+		},
+	},
+	{
+		version: 2,
+		name:    "drop-notification-profiles",
+		stmts: []string{
+			// Removed with the unused NotificationProfile repository; drops
+			// the orphaned table from databases created by older versions.
+			`DROP TABLE IF EXISTS notification_profiles;`,
+		},
+	},
+	{
+		version: 3,
+		name:    "certificate-sans",
+		fn: func(tx *sql.Tx) error {
+			return addColumnIfMissingTx(tx, "certificates", "sans", "TEXT NOT NULL DEFAULT ''")
+		},
+	},
+	{
+		version: 4,
+		name:    "notification-dedup",
+		stmts:   []string{createNotificationDedupTable},
+	},
+	{
+		version: 5,
+		name:    "indexes",
+		stmts: []string{
+			`CREATE INDEX IF NOT EXISTS idx_certificates_domain_id ON certificates(domain_id);`,
+			`CREATE INDEX IF NOT EXISTS idx_certificates_not_after ON certificates(not_after);`,
+			`CREATE INDEX IF NOT EXISTS idx_certificates_status ON certificates(status);`,
+			`CREATE INDEX IF NOT EXISTS idx_domains_enabled ON domains(enabled);`,
+			`CREATE INDEX IF NOT EXISTS idx_domains_group_name ON domains(group_name);`,
+			`CREATE INDEX IF NOT EXISTS idx_domain_tags_tag_id ON domain_tags(tag_id);`,
+		},
+	},
+	{
+		version: 6,
+		name:    "normalize-zero-timestamps",
+		stmts: []string{
+			// Older builds serialized Go zero times as literal strings
+			// instead of NULL, breaking expiry range comparisons.
+			`UPDATE certificates SET not_after = NULL WHERE not_after LIKE '0001-01-01%';`,
+			`UPDATE certificates SET not_before = NULL WHERE not_before LIKE '0001-01-01%';`,
+			`UPDATE certificates SET last_checked = NULL WHERE last_checked LIKE '0001-01-01%';`,
+		},
+	},
+}
+
+const createSchemaVersionTable = `
+CREATE TABLE IF NOT EXISTS schema_version (
+    version    INTEGER NOT NULL,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);`
+
+func (db *DB) ensureSchemaVersionTable() error {
+	if _, err := db.Exec(createSchemaVersionTable); err != nil {
+		return fmt.Errorf("create schema_version: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) currentSchemaVersion() (int, error) {
+	row := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_version`)
+	var version int
+	if err := row.Scan(&version); err != nil {
+		return 0, fmt.Errorf("read schema version: %w", err)
+	}
+	return version, nil
+}
+
+// applyMigration runs a migration's statements inside a transaction together
+// with its version record, so a failed migration leaves no partial state.
+func (db *DB) applyMigration(m migration) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("migration %d (%s): begin: %w", m.version, m.name, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for i, stmt := range m.stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("migration %d (%s) stmt %d: %w", m.version, m.name, i+1, err)
+		}
+	}
+	if m.fn != nil {
+		if err := m.fn(tx); err != nil {
+			return fmt.Errorf("migration %d (%s): %w", m.version, m.name, err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO schema_version (version) VALUES (?)`, m.version); err != nil {
+		return fmt.Errorf("migration %d (%s): record version: %w", m.version, m.name, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("migration %d (%s): commit: %w", m.version, m.name, err)
+	}
 	return nil
 }
 
@@ -155,11 +274,11 @@ func (db *DB) deduplicateCertificates() error {
 	return nil
 }
 
-// addColumnIfMissing adds a column to a table when it does not already exist.
-// SQLite does not support "ADD COLUMN IF NOT EXISTS", so the operation is
-// attempted and the duplicate-column error is ignored.
-func addColumnIfMissing(db *DB, table, column, definition string) error {
-	row := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column)
+// addColumnIfMissingTx adds a column to a table when it does not already
+// exist. SQLite does not support "ADD COLUMN IF NOT EXISTS", so the operation
+// is guarded by a pragma lookup. Safe to re-run.
+func addColumnIfMissingTx(tx *sql.Tx, table, column, definition string) error {
+	row := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column)
 	var count int
 	if err := row.Scan(&count); err != nil {
 		return fmt.Errorf("check column %s.%s: %w", table, column, err)
@@ -167,7 +286,7 @@ func addColumnIfMissing(db *DB, table, column, definition string) error {
 	if count > 0 {
 		return nil
 	}
-	if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)); err != nil {
+	if _, err := tx.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)); err != nil {
 		return fmt.Errorf("add column %s.%s: %w", table, column, err)
 	}
 	return nil
@@ -236,4 +355,10 @@ CREATE TABLE IF NOT EXISTS domain_tags (
     domain_id   INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
     tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (domain_id, tag_id)
+);`
+
+const createNotificationDedupTable = `
+CREATE TABLE IF NOT EXISTS notification_dedup (
+    key         TEXT PRIMARY KEY,
+    notified_at DATETIME NOT NULL
 );`

@@ -45,7 +45,7 @@ func setupServices(t *testing.T) (*DomainService, *CertificateService, *AuthServ
 
 func TestAddDomain(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	d, err := domainSvc.AddDomain("example.com", "test", "")
+	d, err := domainSvc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,11 +56,11 @@ func TestAddDomain(t *testing.T) {
 
 func TestAddDomainDuplicate(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	_, err := domainSvc.AddDomain("example.com", "test", "")
+	_, err := domainSvc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = domainSvc.AddDomain("example.com", "test", "")
+	_, err = domainSvc.AddDomain(context.Background(), "example.com", "test", "")
 	if err == nil {
 		t.Error("expected error for duplicate domain")
 	}
@@ -68,7 +68,7 @@ func TestAddDomainDuplicate(t *testing.T) {
 
 func TestAddDomainEmpty(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	_, err := domainSvc.AddDomain("", "test", "")
+	_, err := domainSvc.AddDomain(context.Background(), "", "test", "")
 	if err == nil {
 		t.Error("expected error for empty domain")
 	}
@@ -76,10 +76,10 @@ func TestAddDomainEmpty(t *testing.T) {
 
 func TestListDomains(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	_, _ = domainSvc.AddDomain("example.com", "test", "")
-	_, _ = domainSvc.AddDomain("example.org", "test2", "")
+	_, _ = domainSvc.AddDomain(context.Background(), "example.com", "test", "")
+	_, _ = domainSvc.AddDomain(context.Background(), "example.org", "test2", "")
 
-	domains, err := domainSvc.ListDomains()
+	domains, err := domainSvc.ListDomains(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,11 +90,11 @@ func TestListDomains(t *testing.T) {
 
 func TestDeleteDomain(t *testing.T) {
 	domainSvc, _, _ := setupServices(t)
-	d, _ := domainSvc.AddDomain("example.com", "test", "")
-	if err := domainSvc.DeleteDomain(d.ID); err != nil {
+	d, _ := domainSvc.AddDomain(context.Background(), "example.com", "test", "")
+	if err := domainSvc.DeleteDomain(context.Background(), d.ID); err != nil {
 		t.Fatal(err)
 	}
-	_, err := domainSvc.GetDomain(d.ID)
+	_, err := domainSvc.GetDomain(context.Background(), d.ID)
 	if err == nil {
 		t.Error("expected error after delete")
 	}
@@ -102,8 +102,8 @@ func TestDeleteDomain(t *testing.T) {
 
 func TestUpdateDomain(t *testing.T) {
 	svc, _, _ := setupServices(t)
-	d, _ := svc.AddDomain("example.com", "original", "group-a")
-	updated, err := svc.UpdateDomain(d.ID, "example.org", "updated", "group-b", false, nil)
+	d, _ := svc.AddDomain(context.Background(), "example.com", "original", "group-a")
+	updated, err := svc.UpdateDomain(context.Background(), d.ID, "example.org", "updated", "group-b", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,12 +123,12 @@ func TestUpdateDomain(t *testing.T) {
 
 func TestUpdateDomainWithTags(t *testing.T) {
 	svc, _, _ := setupServices(t)
-	d, _ := svc.AddDomain("example.com", "", "")
-	_, err := svc.UpdateDomain(d.ID, "example.com", "", "", true, []string{"production"})
+	d, _ := svc.AddDomain(context.Background(), "example.com", "", "")
+	_, err := svc.UpdateDomain(context.Background(), d.ID, "example.com", "", "", true, []string{"production"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := svc.GetDomain(d.ID)
+	got, _ := svc.GetDomain(context.Background(), d.ID)
 	if len(got.Tags) != 1 || got.Tags[0].Name != "production" {
 		t.Errorf("expected 1 tag 'production', got %v", got.Tags)
 	}
@@ -136,19 +136,19 @@ func TestUpdateDomainWithTags(t *testing.T) {
 
 func TestSetDomainTags(t *testing.T) {
 	svc, _, _ := setupServices(t)
-	d, _ := svc.AddDomain("example.com", "", "")
+	d, _ := svc.AddDomain(context.Background(), "example.com", "", "")
 
-	if err := svc.SetDomainTags(d.ID, []string{"prod", "us-east"}); err != nil {
+	if err := svc.SetDomainTags(context.Background(), d.ID, []string{"prod", "us-east"}); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := svc.GetDomain(d.ID)
+	got, _ := svc.GetDomain(context.Background(), d.ID)
 	if len(got.Tags) != 2 {
 		t.Errorf("expected 2 tags, got %d", len(got.Tags))
 	}
-	if err := svc.SetDomainTags(d.ID, []string{"prod"}); err != nil {
+	if err := svc.SetDomainTags(context.Background(), d.ID, []string{"prod"}); err != nil {
 		t.Fatal(err)
 	}
-	got, _ = svc.GetDomain(d.ID)
+	got, _ = svc.GetDomain(context.Background(), d.ID)
 	if len(got.Tags) != 1 {
 		t.Errorf("expected 1 tag after replace, got %d", len(got.Tags))
 	}
@@ -162,7 +162,7 @@ func TestBulkAddDomains(t *testing.T) {
 		{Domain: "", Description: "empty"},
 		{Domain: "not-valid-", Description: "bad"},
 	}
-	resp := svc.BulkAddDomains(entries)
+	resp := svc.BulkAddDomains(context.Background(), entries)
 	if resp.Summary.Total != 4 {
 		t.Errorf("expected 4 total, got %d", resp.Summary.Total)
 	}
@@ -249,7 +249,7 @@ func TestScanDomainSavesSANs(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,11 +262,11 @@ func TestScanDomainSavesSANs(t *testing.T) {
 		t.Fatalf("expected 2 SANs, got %v", cert.SANs)
 	}
 
-	got, err := svc.GetDomain(d.ID)
+	got, err := svc.GetDomain(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	certs, err := svc.certs.ListByDomainID(got.ID)
+	certs, err := svc.certs.ListByDomainID(context.Background(), got.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestEnqueueScanRunsDomain(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 1, 10, time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +323,7 @@ func TestEnqueueScanRunsDomain(t *testing.T) {
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		certs, err := certRepo.ListByDomainID(d.ID)
+		certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 		if err == nil && len(certs) > 0 {
 			return
 		}
@@ -368,7 +368,7 @@ func TestEnqueueScanBackgroundRunsDomain(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 1, 10, time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestEnqueueScanBackgroundRunsDomain(t *testing.T) {
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		certs, err := certRepo.ListByDomainID(d.ID)
+		certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 		if err == nil && len(certs) > 0 {
 			return
 		}
@@ -418,7 +418,7 @@ func TestScanDomainSavesAllCTCertificates(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +427,7 @@ func TestScanDomainSavesAllCTCertificates(t *testing.T) {
 	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	certs, err := certRepo.ListByDomainID(d.ID)
+	certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +439,7 @@ func TestScanDomainSavesAllCTCertificates(t *testing.T) {
 	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	certs, err = certRepo.ListByDomainID(d.ID)
+	certs, err = certRepo.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -492,7 +492,7 @@ func TestScanDomainDedupesIssuerDNFormatVariants(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +500,7 @@ func TestScanDomainDedupesIssuerDNFormatVariants(t *testing.T) {
 	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	certs, err := certRepo.ListByDomainID(d.ID)
+	certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +547,7 @@ func TestScanDomainDedupesEmptySerialVariant(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +555,7 @@ func TestScanDomainDedupesEmptySerialVariant(t *testing.T) {
 	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	certs, err := certRepo.ListByDomainID(d.ID)
+	certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -605,7 +605,7 @@ func TestScanDomainDoesNotCollapseDistinctRenewals(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -613,7 +613,7 @@ func TestScanDomainDoesNotCollapseDistinctRenewals(t *testing.T) {
 	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	certs, err := certRepo.ListByDomainID(d.ID)
+	certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -663,7 +663,7 @@ func TestScanDomainSkipsExpiredCertificates(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,7 +673,7 @@ func TestScanDomainSkipsExpiredCertificates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	certs, err := certRepo.ListByDomainID(d.ID)
+	certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -722,7 +722,7 @@ func TestScanDomainAllExpiredSavesNothing(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +734,7 @@ func TestScanDomainAllExpiredSavesNothing(t *testing.T) {
 	if cert != nil {
 		t.Errorf("expected nil certificate when all results are expired, got %+v", cert)
 	}
-	certs, err := certRepo.ListByDomainID(d.ID)
+	certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,7 +779,7 @@ func TestScanDomainCombinesHTTPSAndCT(t *testing.T) {
 	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
 	t.Cleanup(svc.StopScanQueue)
 
-	d, err := svc.AddDomain("example.com", "test", "")
+	d, err := svc.AddDomain(context.Background(), "example.com", "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +787,7 @@ func TestScanDomainCombinesHTTPSAndCT(t *testing.T) {
 	if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	certs, err := certRepo.ListByDomainID(d.ID)
+	certs, err := certRepo.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -799,7 +799,7 @@ func TestScanDomainCombinesHTTPSAndCT(t *testing.T) {
 func TestPurgeExpired(t *testing.T) {
 	domainSvc, certSvc, _ := setupServices(t)
 
-	d, _ := domainSvc.AddDomain("example.com", "", "")
+	d, _ := domainSvc.AddDomain(context.Background(), "example.com", "", "")
 	now := time.Now().UTC()
 
 	// Expired cert
@@ -813,7 +813,7 @@ func TestPurgeExpired(t *testing.T) {
 		Status:      "expired",
 		LastChecked: now.Add(-2 * time.Hour),
 	}
-	if err := domainSvc.certs.Create(expired); err != nil {
+	if err := domainSvc.certs.Create(context.Background(), expired); err != nil {
 		t.Fatal(err)
 	}
 
@@ -828,11 +828,11 @@ func TestPurgeExpired(t *testing.T) {
 		Status:      "valid",
 		LastChecked: now,
 	}
-	if err := domainSvc.certs.Create(valid); err != nil {
+	if err := domainSvc.certs.Create(context.Background(), valid); err != nil {
 		t.Fatal(err)
 	}
 
-	n, err := certSvc.PurgeExpired()
+	n, err := certSvc.PurgeExpired(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -840,7 +840,7 @@ func TestPurgeExpired(t *testing.T) {
 		t.Errorf("expected 1 expired cert purged, got %d", n)
 	}
 
-	all, err := certSvc.ListCertificates()
+	all, err := certSvc.ListCertificates(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -855,8 +855,8 @@ func TestPurgeExpired(t *testing.T) {
 func TestPurgeExpiredByDomain(t *testing.T) {
 	domainSvc, certSvc, _ := setupServices(t)
 
-	d1, _ := domainSvc.AddDomain("example.com", "", "")
-	d2, _ := domainSvc.AddDomain("example.org", "", "")
+	d1, _ := domainSvc.AddDomain(context.Background(), "example.com", "", "")
+	d2, _ := domainSvc.AddDomain(context.Background(), "example.org", "", "")
 	now := time.Now().UTC()
 
 	// Expired cert for domain 1
@@ -868,7 +868,7 @@ func TestPurgeExpiredByDomain(t *testing.T) {
 		Status:      "expired",
 		LastChecked: now.Add(-2 * time.Hour),
 	}
-	if err := domainSvc.certs.Create(e1); err != nil {
+	if err := domainSvc.certs.Create(context.Background(), e1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -881,11 +881,11 @@ func TestPurgeExpiredByDomain(t *testing.T) {
 		Status:      "expired",
 		LastChecked: now.Add(-2 * time.Hour),
 	}
-	if err := domainSvc.certs.Create(e2); err != nil {
+	if err := domainSvc.certs.Create(context.Background(), e2); err != nil {
 		t.Fatal(err)
 	}
 
-	n, err := certSvc.PurgeExpiredByDomain(d1.ID)
+	n, err := certSvc.PurgeExpiredByDomain(context.Background(), d1.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -893,7 +893,7 @@ func TestPurgeExpiredByDomain(t *testing.T) {
 		t.Errorf("expected 1 expired cert purged for domain 1, got %d", n)
 	}
 
-	d1Certs, err := certSvc.certs.ListByDomainID(d1.ID)
+	d1Certs, err := certSvc.certs.ListByDomainID(context.Background(), d1.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -901,7 +901,7 @@ func TestPurgeExpiredByDomain(t *testing.T) {
 		t.Errorf("expected 0 certs for domain 1, got %d", len(d1Certs))
 	}
 
-	d2Certs, err := certSvc.certs.ListByDomainID(d2.ID)
+	d2Certs, err := certSvc.certs.ListByDomainID(context.Background(), d2.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -912,7 +912,7 @@ func TestPurgeExpiredByDomain(t *testing.T) {
 
 func TestSaveCertificatePurgesExpiredOnRenewal(t *testing.T) {
 	domainSvc, certSvc, _ := setupServices(t)
-	d, _ := domainSvc.AddDomain("example.com", "", "")
+	d, _ := domainSvc.AddDomain(context.Background(), "example.com", "", "")
 	now := time.Now().UTC()
 
 	// Pre-existing expired cert (simulating an old cert that has since been renewed)
@@ -927,7 +927,7 @@ func TestSaveCertificatePurgesExpiredOnRenewal(t *testing.T) {
 		Status:      "expired",
 		LastChecked: now.Add(-2 * time.Hour),
 	}
-	if err := domainSvc.certs.Create(oldCert); err != nil {
+	if err := domainSvc.certs.Create(context.Background(), oldCert); err != nil {
 		t.Fatal(err)
 	}
 
@@ -943,7 +943,7 @@ func TestSaveCertificatePurgesExpiredOnRenewal(t *testing.T) {
 		Status:      "valid",
 	}
 
-	newCert := domainSvc.saveCertificate(d.ID, renewalResult)
+	newCert := domainSvc.saveCertificate(context.Background(), d.ID, renewalResult)
 
 	if newCert.ID == 0 {
 		t.Fatal("expected new cert to have an ID")
@@ -953,7 +953,7 @@ func TestSaveCertificatePurgesExpiredOnRenewal(t *testing.T) {
 	}
 
 	// The old expired cert should have been purged
-	certs, err := certSvc.certs.ListByDomainID(d.ID)
+	certs, err := certSvc.certs.ListByDomainID(context.Background(), d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

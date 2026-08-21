@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -19,12 +18,9 @@ import (
 	"github.com/araujofrancisco/certwatch/internal/discovery"
 	"github.com/araujofrancisco/certwatch/internal/logging"
 	"github.com/araujofrancisco/certwatch/internal/middleware"
-	"github.com/araujofrancisco/certwatch/internal/models"
 	"github.com/araujofrancisco/certwatch/internal/notifier"
 	"github.com/araujofrancisco/certwatch/internal/repository"
-	"github.com/araujofrancisco/certwatch/internal/scheduler"
 	"github.com/araujofrancisco/certwatch/internal/services"
-	"github.com/araujofrancisco/certwatch/internal/templates"
 )
 
 func main() {
@@ -42,7 +38,7 @@ func healthCheck() int {
 	if port == "" {
 		cfgPath := os.Getenv("CERTWATCH_CONFIG")
 		if cfgPath == "" {
-			cfgPath = "config/default.yaml"
+			cfgPath = config.DefaultPath
 		}
 		cfg, err := config.Load(cfgPath)
 		if err == nil {
@@ -67,7 +63,7 @@ func healthCheck() int {
 }
 
 func run() error {
-	cfgPath := "config/default.yaml"
+	cfgPath := config.DefaultPath
 	if v := os.Getenv("CERTWATCH_CONFIG"); v != "" {
 		cfgPath = v
 	}
@@ -79,11 +75,15 @@ func run() error {
 
 	logging.Init(cfg.Logging.Level, cfg.Logging.Format)
 
-	if cfg.Auth.Secret == "change-me-in-production" {
-		slog.Warn("using default JWT secret — set CERTWATCH_AUTH_SECRET in production")
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+	for _, w := range cfg.Warnings() {
+		slog.Warn(w)
 	}
 
 	slog.Info("starting certwatch", "version", version())
+	slog.Info("configuration", "config", cfg)
 
 	if err := database.EnsureDir(cfg.Database.Driver, cfg.Database.DSN); err != nil {
 		return err
@@ -124,11 +124,26 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, ctx, cfg.Discovery.MaxConcurrentScans, cfg.Discovery.QueueSize, scanTimeout)
+	// The domain service gets its own background context rather than the
+	// signal context: queued and in-flight scans must survive SIGTERM so
+	// StopScanQueue can drain them cleanly during shutdown.
+	domainSvc := services.NewDomainService(domainRepo, certRepo, scannerReg, tagRepo, context.Background(), cfg.Discovery.MaxConcurrentScans, cfg.Discovery.QueueSize, scanTimeout)
 	certSvc := services.NewCertificateService(certRepo, domainRepo)
 
-	rateLimiter := middleware.NewRateLimiter(10, time.Minute)
-	readRateLimiter := middleware.NewRateLimiter(300, time.Minute) // Higher limit for GET requests
+	rateLimit := cfg.Server.RateLimit
+	if rateLimit <= 0 {
+		rateLimit = 10
+	}
+	readRateLimit := cfg.Server.ReadRateLimit
+	if readRateLimit <= 0 {
+		readRateLimit = 300
+	}
+	rateWindow := time.Minute
+	if w, err := time.ParseDuration(cfg.Server.RateLimitWindow); err == nil && w > 0 {
+		rateWindow = w
+	}
+	rateLimiter := middleware.NewRateLimiter(rateLimit, rateWindow)
+	readRateLimiter := middleware.NewRateLimiter(readRateLimit, rateWindow) // Higher limit for GET requests
 	handler := api.NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rateLimiter, readRateLimiter)
 
 	mux := http.NewServeMux()
@@ -138,7 +153,11 @@ func run() error {
 	if len(corsOrigins) == 0 {
 		corsOrigins = []string{"http://localhost:8080", "http://127.0.0.1:8080"}
 	}
-	wrapped := middleware.Recovery(middleware.Logging(middleware.SecurityHeaders(middleware.CORS(corsOrigins)(mux))))
+	requestTimeout := 30 * time.Second
+	if t, err := time.ParseDuration(cfg.Server.RequestTimeout); err == nil && t > 0 {
+		requestTimeout = t
+	}
+	wrapped := middleware.Recovery(middleware.Logging(middleware.SecurityHeaders(middleware.Timeout(requestTimeout)(middleware.CORS(corsOrigins)(mux)))))
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),
@@ -161,7 +180,8 @@ func run() error {
 	}()
 
 	go runBackgroundScan(ctx, domainSvc, certSvc, scanTimeout, scanInterval)
-	go runNotifications(ctx, cfg, domainSvc, certSvc)
+	dedupRepo := repository.NewNotificationDedupRepository(db)
+	go notifier.NewRunner(cfg.Notifications, certSvc, domainSvc, dedupRepo).Run(ctx)
 
 	<-ctx.Done()
 	slog.Info("shutting down")
@@ -196,207 +216,11 @@ func runBackgroundScan(ctx context.Context, svc *services.DomainService, certSvc
 			// Safety net: purge all expired certificates that were not
 			// caught by the renewal-triggered cleanup (e.g. domains whose
 			// cert expired between scan cycles).
-			if n, err := certSvc.PurgeExpired(); err != nil {
+			if n, err := certSvc.PurgeExpired(ctx); err != nil {
 				slog.Error("failed to purge expired certificates", "error", err)
 			} else if n > 0 {
 				slog.Info("purged expired certificates", "deleted", n)
 			}
-		}
-	}
-}
-
-type notifiedSet struct {
-	mu    sync.Mutex
-	m     map[string]time.Time
-	ttl   time.Duration
-}
-
-func newNotifiedSet(ttl time.Duration) *notifiedSet {
-	return &notifiedSet{m: make(map[string]time.Time), ttl: ttl}
-}
-
-func (ns *notifiedSet) Contains(key string) bool {
-	ns.mu.Lock()
-	defer ns.mu.Unlock()
-	if t, ok := ns.m[key]; ok {
-		if time.Since(t) < ns.ttl {
-			return true
-		}
-		delete(ns.m, key)
-	}
-	return false
-}
-
-func (ns *notifiedSet) Add(key string) {
-	ns.mu.Lock()
-	defer ns.mu.Unlock()
-	ns.m[key] = time.Now()
-}
-
-func (ns *notifiedSet) Cleanup() {
-	ns.mu.Lock()
-	defer ns.mu.Unlock()
-	now := time.Now()
-	for k, t := range ns.m {
-		if now.Sub(t) >= ns.ttl {
-			delete(ns.m, k)
-		}
-	}
-}
-
-func runNotifications(ctx context.Context, cfg config.Config, domainSvc *services.DomainService, certSvc *services.CertificateService) {
-	notified := newNotifiedSet(24 * time.Hour) // dedup across minutes, auto-cleanup after 24h
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				notified.Cleanup()
-			}
-		}
-	}()
-
-	if err := notifier.ValidateProfiles(cfg.Notifications.Profiles); err != nil {
-		slog.Error("invalid notification profiles", "error", err)
-		return
-	}
-
-	notifierN := notifier.New(cfg.Notifications)
-	matcher := notifier.NewMatcher(notifier.FilterEnabled(cfg.Notifications.Profiles))
-
-	sched := scheduler.New()
-
-	for _, p := range notifier.FilterEnabled(cfg.Notifications.Profiles) {
-		profile := p
-
-		if profile.Type == "immediate" {
-			expr, err := scheduler.ParseCron("* * * * *")
-			if err != nil {
-				slog.Error("parse immediate cron", "error", err)
-				continue
-			}
-			sched.Add(&scheduler.Job{
-				Name:     profile.Name + "-immediate",
-				Expr:     expr,
-				Timezone: time.UTC,
-				Handler: func(ctx context.Context) {
-					checkImmediateNotifications(ctx, domainSvc, certSvc, notifierN, matcher, profile, notified)
-				},
-			})
-			continue
-		}
-
-		cronExpr := notifier.DefaultCron(profile)
-		expr, err := scheduler.ParseCron(cronExpr)
-		if err != nil {
-			slog.Error("parse cron for profile", "name", profile.Name, "error", err)
-			continue
-		}
-		locName := profile.Timezone
-		if locName == "" {
-			locName = "America/New_York"
-		}
-		loc, err := time.LoadLocation(locName)
-		if err != nil {
-			slog.Warn("invalid timezone, falling back to America/New_York", "profile", profile.Name, "timezone", locName)
-			loc = time.FixedZone("America/New_York", -5*60*60)
-		}
-		sched.Add(&scheduler.Job{
-			Name:     profile.Name,
-			Expr:     expr,
-			Timezone: loc,
-			Handler: func(ctx context.Context) {
-				sendDigest(ctx, domainSvc, certSvc, notifierN, matcher, profile)
-			},
-		})
-	}
-
-	slog.Info("starting notification scheduler")
-	sched.Start(ctx)
-}
-
-func checkImmediateNotifications(ctx context.Context, domainSvc *services.DomainService, certSvc *services.CertificateService, notifierN *notifier.Notifier, matcher *notifier.Matcher, profile config.ProfileConfig, notified *notifiedSet) {
-	certs, err := certSvc.ListCertificates()
-	if err != nil {
-		slog.Error("immediate check: list certificates", "error", err)
-		return
-	}
-
-	var allCerts []models.Certificate
-	for _, c := range certs {
-		allCerts = append(allCerts, *c)
-	}
-
-	matches := matcher.FindMatches(allCerts)
-	if len(matches) == 0 {
-		return
-	}
-
-	for _, m := range matches {
-		if m.Profile.Name != profile.Name {
-			continue
-		}
-		for _, c := range m.Certificates {
-			key := fmt.Sprintf("%d:%d", c.ID, m.Threshold)
-			if notified.Contains(key) {
-				continue
-			}
-			notified.Add(key)
-
-			domain, err := domainSvc.GetDomain(c.DomainID)
-			if err != nil {
-				continue
-			}
-			info := templates.CertInfo{
-				Domain:      domain.Domain,
-				Issuer:      c.Issuer,
-				Expires:     c.NotAfter,
-				DaysRemains: m.Threshold,
-			}
-			subject, body := templates.ImmediateAlert(info)
-			if err := notifierN.SendEmail(ctx, m.Profile.Recipients, subject, body); err != nil {
-				slog.Error("send immediate notification", "error", err)
-			}
-		}
-	}
-}
-
-func sendDigest(ctx context.Context, domainSvc *services.DomainService, certSvc *services.CertificateService, notifierN *notifier.Notifier, matcher *notifier.Matcher, profile config.ProfileConfig) {
-	certs, err := certSvc.ListCertificates()
-	if err != nil {
-		slog.Error("digest: list certificates", "error", err)
-		return
-	}
-	domains, err := domainSvc.ListDomains()
-	if err != nil {
-		slog.Error("digest: list domains", "error", err)
-		return
-	}
-
-	var allCerts []models.Certificate
-	for _, c := range certs {
-		allCerts = append(allCerts, *c)
-	}
-	var allDomains []models.Domain
-	for _, d := range domains {
-		allDomains = append(allDomains, *d)
-	}
-
-	switch profile.Type {
-	case "daily-digest":
-		section := matcher.BuildDailyDigest(allCerts, allDomains)
-		subject, body := templates.DailyDigest(time.Now(), section)
-		if err := notifierN.SendEmail(ctx, profile.Recipients, subject, body); err != nil {
-			slog.Error("send daily digest", "error", err)
-		}
-	case "weekly-digest":
-		report := matcher.BuildWeeklyReport(allCerts, allDomains)
-		subject, body := templates.WeeklyReportDigest(report)
-		if err := notifierN.SendEmail(ctx, profile.Recipients, subject, body); err != nil {
-			slog.Error("send weekly digest", "error", err)
 		}
 	}
 }

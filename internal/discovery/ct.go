@@ -17,6 +17,14 @@ type ctScanner struct {
 	timeout time.Duration
 }
 
+// sharedTransport is reused by every CT scanner instance in the process so
+// idle connections are pooled across scanners instead of duplicated.
+var sharedTransport = &http.Transport{
+	MaxIdleConns:        4,
+	MaxIdleConnsPerHost: 2,
+	IdleConnTimeout:     30 * time.Second,
+}
+
 // NewCTScanner builds a CT scanner with a default HTTP client and timeout.
 func NewCTScanner(timeout time.Duration) Scanner {
 	return NewCTScannerWithClient(nil, timeout)
@@ -31,12 +39,8 @@ func NewCTScannerWithClient(client *http.Client, timeout time.Duration) Scanner 
 	}
 	if client == nil {
 		client = &http.Client{
-			Timeout: cfg.Timeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        4,
-				MaxIdleConnsPerHost: 2,
-				IdleConnTimeout:     30 * time.Second,
-			},
+			Timeout:   cfg.Timeout,
+			Transport: sharedTransport,
 		}
 	}
 	return &ctScanner{

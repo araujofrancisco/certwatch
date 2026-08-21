@@ -25,7 +25,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.authSvc.Register(req.Email, req.Password, req.Name)
+	user, err := h.authSvc.Register(r.Context(), req.Email, req.Password, req.Name)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -43,7 +43,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.authSvc.Login(req.Email, req.Password)
+	resp, err := h.authSvc.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
 		return
@@ -70,7 +70,7 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authSvc.ChangePassword(claims.UserID, req.CurrentPassword, req.NewPassword); err != nil {
+	if err := h.authSvc.ChangePassword(r.Context(), claims.UserID, req.CurrentPassword, req.NewPassword); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

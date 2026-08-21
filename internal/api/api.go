@@ -14,13 +14,13 @@ import (
 const Version = "0.1.0"
 
 type Handler struct {
-	domains       *services.DomainService
-	certs         *services.CertificateService
-	authSvc       *services.AuthService
-	authN         *auth.Authenticator
-	db            *sql.DB
-	rateLimiter   *middleware.RateLimiter
-	readLimiter   *middleware.RateLimiter
+	domains     *services.DomainService
+	certs       *services.CertificateService
+	authSvc     *services.AuthService
+	authN       *auth.Authenticator
+	db          *sql.DB
+	rateLimiter *middleware.RateLimiter
+	readLimiter *middleware.RateLimiter
 }
 
 func NewHandler(domains *services.DomainService, certs *services.CertificateService, authSvc *services.AuthService, authN *auth.Authenticator, db *sql.DB, rateLimiter, readLimiter *middleware.RateLimiter) *Handler {

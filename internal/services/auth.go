@@ -1,12 +1,14 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"net/mail"
 	"strings"
 
 	"github.com/araujofrancisco/certwatch/internal/auth"
 	"github.com/araujofrancisco/certwatch/internal/models"
+	"github.com/araujofrancisco/certwatch/internal/repository"
 )
 
 type LoginResponse struct {
@@ -14,7 +16,7 @@ type LoginResponse struct {
 	User  *models.User `json:"user"`
 }
 
-func (s *AuthService) Register(email, password, name string) (*models.User, error) {
+func (s *AuthService) Register(ctx context.Context, email, password, name string) (*models.User, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
 		return nil, fmt.Errorf("email is required")
@@ -39,27 +41,24 @@ func (s *AuthService) Register(email, password, name string) (*models.User, erro
 		Password: hashed,
 		Name:     name,
 	}
-	if err := s.users.Create(user); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "already exists") {
-			return nil, fmt.Errorf("registration failed")
-		}
+	if err := s.users.Create(ctx, user); err != nil {
 		return nil, fmt.Errorf("registration failed")
 	}
 
-	created, err := s.users.FindByID(user.ID)
+	created, err := s.users.FindByID(ctx, user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("registration failed")
 	}
 	return created, nil
 }
 
-func (s *AuthService) ChangePassword(userID int64, currentPassword, newPassword string) error {
+func (s *AuthService) ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error {
 	if len(newPassword) < 8 {
 		return fmt.Errorf("password must be at least 8 characters")
 	}
-	user, err := s.users.FindByID(userID)
+	user, err := s.users.FindByID(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("user not found")
+		return fmt.Errorf("user not found: %w", repository.ErrNotFound)
 	}
 	if err := auth.CheckPassword(user.Password, currentPassword); err != nil {
 		return fmt.Errorf("current password is incorrect")
@@ -69,11 +68,11 @@ func (s *AuthService) ChangePassword(userID int64, currentPassword, newPassword 
 		return err
 	}
 	user.Password = hash
-	return s.users.Update(user)
+	return s.users.Update(ctx, user)
 }
 
-func (s *AuthService) Login(email, password string) (*LoginResponse, error) {
-	user, err := s.users.FindByEmail(email)
+func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResponse, error) {
+	user, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
 		return nil, fmt.Errorf("invalid email or password")
 	}

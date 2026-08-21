@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"sort"
 	"time"
 )
 
@@ -15,71 +14,56 @@ type dashboardExpiring struct {
 }
 
 type dashboardResponse struct {
-	Healthy      int                  `json:"healthy"`
-	Warning      int                  `json:"warning"`
-	Expired      int                  `json:"expired"`
-	TotalDomains int                  `json:"total_domains"`
-	ExpiringSoon []dashboardExpiring  `json:"expiring_soon"`
+	Healthy      int                 `json:"healthy"`
+	Warning      int                 `json:"warning"`
+	Expired      int                 `json:"expired"`
+	TotalDomains int                 `json:"total_domains"`
+	ExpiringSoon []dashboardExpiring `json:"expiring_soon"`
 }
 
 func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
-	certs, err := h.certs.ListCertificates()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list certificates")
-		return
-	}
-
-	domains, err := h.domains.ListDomains()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list domains")
-		return
-	}
-
-	domainMap := make(map[int64]string, len(domains))
-	for _, d := range domains {
-		domainMap[d.ID] = d.Domain
-	}
-
+	// Bucket boundaries mirror the original in-memory logic: days remaining
+	// is computed as int(hours/24), so "expired" covers < 24h of life left
+	// and "warning" covers 24h up to (but excluding) 360h.
 	now := time.Now()
-	var healthy, warning, expired int
-	var expiring []dashboardExpiring
+	warningStart := now.Add(24 * time.Hour)
+	warningEnd := now.Add(360 * time.Hour)
 
-	for _, c := range certs {
-		if c.NotAfter.IsZero() {
-			healthy++
-			continue
-		}
-		days := int(c.NotAfter.Sub(now).Hours() / 24)
-		switch {
-		case days <= 0:
-			expired++
-		case days <= 14:
-			warning++
-			expiring = append(expiring, dashboardExpiring{
-				DomainID:      c.DomainID,
-				Domain:        domainMap[c.DomainID],
-				Issuer:        c.Issuer,
-				ExpiresAt:     c.NotAfter.Format(time.RFC3339),
-				DaysRemaining: days,
-			})
-		default:
-			healthy++
-		}
+	counts, err := h.certs.CountExpiryBuckets(r.Context(), warningStart, warningEnd)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to compute dashboard counts")
+		return
 	}
 
-	sort.Slice(expiring, func(i, j int) bool {
-		return expiring[i].DaysRemaining < expiring[j].DaysRemaining
-	})
-	if len(expiring) > 10 {
-		expiring = expiring[:10]
+	totalDomains, err := h.domains.CountDomains(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to count domains")
+		return
+	}
+
+	rows, err := h.certs.ListExpiringSoon(r.Context(), now, warningEnd, 10)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list expiring certificates")
+		return
+	}
+
+	expiring := make([]dashboardExpiring, 0, len(rows))
+	for _, e := range rows {
+		expiring = append(expiring, dashboardExpiring{
+			DomainID:      e.DomainID,
+			Domain:        e.Domain,
+			Issuer:        e.Issuer,
+			ExpiresAt:     e.ExpiresAt.Format(time.RFC3339),
+			DaysRemaining: int(e.ExpiresAt.Sub(now).Hours() / 24),
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSON(w, http.StatusOK, dashboardResponse{
-		Healthy:      healthy,
-		Warning:      warning,
-		Expired:      expired,
-		TotalDomains: len(domains),
+		Healthy:      counts.Healthy,
+		Warning:      counts.Warning,
+		Expired:      counts.Expired,
+		TotalDomains: totalDomains,
 		ExpiringSoon: expiring,
 	})
 }

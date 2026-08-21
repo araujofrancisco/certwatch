@@ -2,11 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/araujofrancisco/certwatch/internal/models"
+	"github.com/araujofrancisco/certwatch/internal/repository"
 	"github.com/araujofrancisco/certwatch/internal/services"
 )
 
@@ -49,7 +51,7 @@ func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
 		f.Limit = limit
 	}
 
-	domains, err := h.domains.ListDomainsPaginated(f)
+	domains, err := h.domains.ListDomainsPaginated(r.Context(), f)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list domains")
 		return
@@ -64,19 +66,19 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domain, err := h.domains.AddDomain(req.Domain, req.Description, req.Group)
+	domain, err := h.domains.AddDomain(r.Context(), req.Domain, req.Description, req.Group)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if len(req.Tags) > 0 {
-		if err := h.domains.SetDomainTags(domain.ID, req.Tags); err != nil {
+		if err := h.domains.SetDomainTags(r.Context(), domain.ID, req.Tags); err != nil {
 			slog.Error("failed to set domain tags", "domain_id", domain.ID, "error", err)
 		}
 	}
 
-	domain, err = h.domains.GetDomain(domain.ID)
+	domain, err = h.domains.GetDomain(r.Context(), domain.ID)
 	if err != nil {
 		slog.Error("failed to re-fetch domain", "domain_id", domain.ID, "error", err)
 	}
@@ -99,7 +101,7 @@ func (h *Handler) updateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domain, err := h.domains.UpdateDomain(id, req.Domain, req.Description, req.Group, req.Enabled, req.Tags)
+	domain, err := h.domains.UpdateDomain(r.Context(), id, req.Domain, req.Description, req.Group, req.Enabled, req.Tags)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -152,7 +154,7 @@ func (h *Handler) importDomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := h.domains.BulkAddDomains(pairs)
+	result := h.domains.BulkAddDomains(r.Context(), pairs)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -163,9 +165,13 @@ func (h *Handler) getDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domain, err := h.domains.GetDomain(id)
+	domain, err := h.domains.GetDomain(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "domain not found")
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "domain not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get domain")
 		return
 	}
 
@@ -179,8 +185,12 @@ func (h *Handler) deleteDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.domains.DeleteDomain(id); err != nil {
-		writeError(w, http.StatusNotFound, "domain not found")
+	if err := h.domains.DeleteDomain(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "domain not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to delete domain")
 		return
 	}
 
@@ -194,8 +204,12 @@ func (h *Handler) scanDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.domains.GetDomain(id); err != nil {
-		writeError(w, http.StatusNotFound, "domain not found")
+	if _, err := h.domains.GetDomain(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "domain not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get domain")
 		return
 	}
 
