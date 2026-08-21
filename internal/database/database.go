@@ -64,9 +64,11 @@ func (db *DB) Migrate() error {
 		createUsersTable,
 		createDomainsTable,
 		createCertificatesTable,
-		createNotificationProfilesTable,
 		createTagsTable,
 		createDomainTagsTable,
+		// Removed with the unused NotificationProfile repository; drops the
+		// orphaned table from databases created by older versions.
+		`DROP TABLE IF EXISTS notification_profiles;`,
 	}
 
 	for i, m := range migrations {
@@ -234,16 +236,4 @@ CREATE TABLE IF NOT EXISTS domain_tags (
     domain_id   INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
     tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (domain_id, tag_id)
-);`
-
-const createNotificationProfilesTable = `
-CREATE TABLE IF NOT EXISTS notification_profiles (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT    NOT NULL UNIQUE,
-    type        TEXT    NOT NULL,
-    enabled     INTEGER NOT NULL DEFAULT 1,
-    recipients  TEXT    NOT NULL DEFAULT '',
-    config      TEXT    NOT NULL DEFAULT '{}',
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );`

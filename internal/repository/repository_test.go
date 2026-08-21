@@ -54,14 +54,6 @@ func TestUserRepository(t *testing.T) {
 		t.Errorf("expected %d, got %d", u.ID, found2.ID)
 	}
 
-	users, err := repo.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(users) != 1 {
-		t.Errorf("expected 1 user, got %d", len(users))
-	}
-
 	u.Name = "Updated"
 	if err := repo.Update(u); err != nil {
 		t.Fatal(err)
@@ -69,14 +61,6 @@ func TestUserRepository(t *testing.T) {
 	found3, _ := repo.FindByID(u.ID)
 	if found3.Name != "Updated" {
 		t.Errorf("expected Updated, got %s", found3.Name)
-	}
-
-	if err := repo.Delete(u.ID); err != nil {
-		t.Fatal(err)
-	}
-	_, err = repo.FindByID(u.ID)
-	if err == nil {
-		t.Error("expected error after delete")
 	}
 }
 
@@ -174,12 +158,12 @@ func TestCertificateRepository(t *testing.T) {
 		t.Errorf("expected 1 cert, got %d", len(byDomain))
 	}
 
-	latest, err := certRepo.LatestForDomain(d.ID)
+	latest, err := certRepo.ListByDomainID(d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if latest.ID != c.ID {
-		t.Errorf("expected %d, got %d", c.ID, latest.ID)
+	if len(latest) != 1 || latest[0].ID != c.ID {
+		t.Errorf("expected cert %d for domain, got %v", c.ID, latest)
 	}
 
 	all, err := certRepo.List()
@@ -201,47 +185,6 @@ func TestCertificateRepository(t *testing.T) {
 	_, err = certRepo.FindByID(c.ID)
 	if err == nil {
 		t.Error("expected error after delete")
-	}
-}
-
-func TestNotificationProfileRepository(t *testing.T) {
-	db := setupDB(t)
-	repo := NewNotificationProfileRepository(db)
-
-	p := &models.NotificationProfile{
-		Name:       "Operations",
-		Type:       "immediate",
-		Enabled:    true,
-		Recipients: "ops@example.com",
-		Config:     `{"thresholds":[30,14,7,3,1]}`,
-	}
-	if err := repo.Create(p); err != nil {
-		t.Fatal(err)
-	}
-
-	found, err := repo.FindByID(p.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if found.Name != "Operations" {
-		t.Errorf("expected Operations, got %s", found.Name)
-	}
-
-	profiles, err := repo.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(profiles) != 1 {
-		t.Errorf("expected 1 profile, got %d", len(profiles))
-	}
-
-	p.Enabled = false
-	if err := repo.Update(p); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := repo.Delete(p.ID); err != nil {
-		t.Fatal(err)
 	}
 }
 

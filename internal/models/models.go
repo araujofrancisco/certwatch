@@ -29,11 +29,6 @@ type Tag struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-type DomainTag struct {
-	DomainID int64 `json:"domain_id"`
-	TagID    int64 `json:"tag_id"`
-}
-
 type Certificate struct {
 	ID          int64     `json:"id"`
 	DomainID    int64     `json:"domain_id"`
@@ -52,11 +47,10 @@ type Certificate struct {
 }
 
 type DomainFilter struct {
-	Query   string   // search domain + description
-	Enabled *bool    // nil = all, non-nil = filter
-	Tags    []string // filter by tag names
-	Page    int      // 1-based page number (0 = no pagination)
-	Limit   int      // items per page (0 = no pagination)
+	Query   string // search domain + description
+	Enabled *bool  // nil = all, non-nil = filter
+	Page    int    // 1-based page number (0 = no pagination)
+	Limit   int    // items per page (0 = no pagination)
 }
 
 func (f DomainFilter) Offset() int {
@@ -82,15 +76,4 @@ func (f CertFilter) Offset() int {
 		return 0
 	}
 	return (f.Page - 1) * f.Limit
-}
-
-type NotificationProfile struct {
-	ID         int64     `json:"id"`
-	Name       string    `json:"name"`
-	Type       string    `json:"type"`
-	Enabled    bool      `json:"enabled"`
-	Recipients string    `json:"recipients"`
-	Config     string    `json:"config"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
 }

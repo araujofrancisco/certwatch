@@ -108,15 +108,6 @@ func (s *DomainService) ListDomains() ([]*models.Domain, error) {
 	return domains, nil
 }
 
-func (s *DomainService) ListDomainsFiltered(f models.DomainFilter) ([]*models.Domain, error) {
-	domains, err := s.domains.ListFiltered(f)
-	if err != nil {
-		return nil, err
-	}
-	s.attachTags(domains)
-	return domains, nil
-}
-
 func derefTags(ptags []*models.Tag) []models.Tag {
 	tags := make([]models.Tag, len(ptags))
 	for i, t := range ptags {

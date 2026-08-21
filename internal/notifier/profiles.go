@@ -3,7 +3,6 @@ package notifier
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/araujofrancisco/certwatch/internal/config"
@@ -117,12 +116,4 @@ func FilterEnabled(profiles []config.ProfileConfig) []config.ProfileConfig {
 		}
 	}
 	return enabled
-}
-
-func ImmediateThresholds() []int {
-	return []int{30, 14, 7, 3, 1}
-}
-
-func SortThresholds(thresholds []int) {
-	sort.Sort(sort.Reverse(sort.IntSlice(thresholds)))
 }

@@ -559,7 +559,7 @@ func TestScanDomainDedupesEmptySerialVariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
- 	if len(certs) != 1 {
+	if len(certs) != 1 {
 		t.Fatalf("expected 1 certificate (empty-serial variant deduped), got %d", len(certs))
 	}
 }
@@ -796,28 +796,6 @@ func TestScanDomainCombinesHTTPSAndCT(t *testing.T) {
 	}
 }
 
-func TestListDomainsFiltered(t *testing.T) {
-	svc, _, _ := setupServices(t)
-	_, _ = svc.AddDomain("example.com", "desc one", "")
-	_, _ = svc.AddDomain("example.org", "desc two", "")
-
-	filtered, err := svc.ListDomainsFiltered(models.DomainFilter{Query: "one"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(filtered) != 1 {
-		t.Errorf("expected 1 filtered result, got %d", len(filtered))
-	}
-	enabled := true
-	allEnabled, err := svc.ListDomainsFiltered(models.DomainFilter{Enabled: &enabled})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(allEnabled) != 2 {
-		t.Errorf("expected 2 enabled domains, got %d", len(allEnabled))
-	}
-}
-
 func TestPurgeExpired(t *testing.T) {
 	domainSvc, certSvc, _ := setupServices(t)
 
@@ -915,7 +893,7 @@ func TestPurgeExpiredByDomain(t *testing.T) {
 		t.Errorf("expected 1 expired cert purged for domain 1, got %d", n)
 	}
 
-	d1Certs, err := certSvc.ListByDomain(d1.ID)
+	d1Certs, err := certSvc.certs.ListByDomainID(d1.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -923,7 +901,7 @@ func TestPurgeExpiredByDomain(t *testing.T) {
 		t.Errorf("expected 0 certs for domain 1, got %d", len(d1Certs))
 	}
 
-	d2Certs, err := certSvc.ListByDomain(d2.ID)
+	d2Certs, err := certSvc.certs.ListByDomainID(d2.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -975,7 +953,7 @@ func TestSaveCertificatePurgesExpiredOnRenewal(t *testing.T) {
 	}
 
 	// The old expired cert should have been purged
-	certs, err := certSvc.ListByDomain(d.ID)
+	certs, err := certSvc.certs.ListByDomainID(d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

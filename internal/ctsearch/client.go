@@ -43,9 +43,6 @@ func DefaultProviders() []string {
 	return []string{"certspotter", "ctlogsdev"}
 }
 
-// ProviderNames is the set of provider names the aggregator can construct.
-var ProviderNames = map[string]bool{"ctlogsdev": true, "certspotter": true}
-
 // QueryResult is the normalized outcome of a search request. It is JSON-ready
 // and used directly by the API layer.
 type QueryResult struct {

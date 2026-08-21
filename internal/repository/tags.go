@@ -95,44 +95,6 @@ func (r *tagRepo) GetDomainTags(domainID int64) ([]*models.Tag, error) {
 	return scanTags(rows)
 }
 
-func (r *tagRepo) ListByTagNames(names []string) ([]int64, error) {
-	if len(names) == 0 {
-		return nil, nil
-	}
-	placeholders := make([]string, len(names))
-	args := make([]any, len(names))
-	for i, n := range names {
-		placeholders[i] = "?"
-		args[i] = strings.ToLower(strings.TrimSpace(n))
-	}
-
-	query := fmt.Sprintf(`
-		SELECT dt.domain_id
-		FROM domain_tags dt
-		JOIN tags t ON t.id = dt.tag_id
-		WHERE t.name IN (%s)`, strings.Join(placeholders, ","))
-
-	rows, err := r.db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list by tag names: %w", err)
-	}
-	defer rows.Close()
-
-	var ids []int64
-	seen := make(map[int64]bool)
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		if !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
-		}
-	}
-	return ids, rows.Err()
-}
-
 func (r *tagRepo) GetTagsByDomainIDs(domainIDs []int64) (map[int64][]*models.Tag, error) {
 	if len(domainIDs) == 0 {
 		return make(map[int64][]*models.Tag), nil

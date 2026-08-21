@@ -9,9 +9,7 @@ type UserRepository interface {
 	Create(u *models.User) error
 	FindByID(id int64) (*models.User, error)
 	FindByEmail(email string) (*models.User, error)
-	List() ([]*models.User, error)
 	Update(u *models.User) error
-	Delete(id int64) error
 }
 
 type DomainRepository interface {
@@ -30,7 +28,6 @@ type CertificateRepository interface {
 	Create(c *models.Certificate) error
 	FindByID(id int64) (*models.Certificate, error)
 	ListByDomainID(domainID int64) ([]*models.Certificate, error)
-	LatestForDomain(domainID int64) (*models.Certificate, error)
 	List() ([]*models.Certificate, error)
 	ListFiltered(filter models.CertFilter) ([]*models.Certificate, error)
 	CountFiltered(filter models.CertFilter) (int, error)
@@ -42,14 +39,6 @@ type CertificateRepository interface {
 	DeleteExpiredByDomain(domainID int64) (int64, error)
 }
 
-type NotificationProfileRepository interface {
-	Create(p *models.NotificationProfile) error
-	FindByID(id int64) (*models.NotificationProfile, error)
-	List() ([]*models.NotificationProfile, error)
-	Update(p *models.NotificationProfile) error
-	Delete(id int64) error
-}
-
 type TagRepository interface {
 	Create(name, color string) (*models.Tag, error)
 	FindByID(id int64) (*models.Tag, error)
@@ -59,7 +48,6 @@ type TagRepository interface {
 	SetDomainTags(domainID int64, tagIDs []int64) error
 	GetDomainTags(domainID int64) ([]*models.Tag, error)
 	GetTagsByDomainIDs(domainIDs []int64) (map[int64][]*models.Tag, error)
-	ListByTagNames(names []string) ([]int64, error)
 }
 
 func NewUserRepository(db *database.DB) UserRepository {
@@ -72,10 +60,6 @@ func NewDomainRepository(db *database.DB) DomainRepository {
 
 func NewCertificateRepository(db *database.DB) CertificateRepository {
 	return &certRepo{db: db}
-}
-
-func NewNotificationProfileRepository(db *database.DB) NotificationProfileRepository {
-	return &notifProfileRepo{db: db}
 }
 
 func NewTagRepository(db *database.DB) TagRepository {

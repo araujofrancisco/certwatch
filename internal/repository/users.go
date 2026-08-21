@@ -39,26 +39,6 @@ func (r *userRepo) FindByEmail(email string) (*models.User, error) {
 	return scanUser(row)
 }
 
-func (r *userRepo) List() ([]*models.User, error) {
-	rows, err := r.db.Query(
-		`SELECT id, email, password, name, created_at, updated_at FROM users ORDER BY id`,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list users: %w", err)
-	}
-	defer rows.Close()
-
-	var users []*models.User
-	for rows.Next() {
-		u, err := scanUser(rows)
-		if err != nil {
-			return nil, err
-		}
-		users = append(users, u)
-	}
-	return users, rows.Err()
-}
-
 func (r *userRepo) Update(u *models.User) error {
 	_, err := r.db.Exec(
 		`UPDATE users SET email = ?, password = ?, name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,

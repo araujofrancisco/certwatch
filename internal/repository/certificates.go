@@ -66,15 +66,6 @@ func (r *certRepo) ListByDomainID(domainID int64) ([]*models.Certificate, error)
 	return scanCerts(rows)
 }
 
-func (r *certRepo) LatestForDomain(domainID int64) (*models.Certificate, error) {
-	row := r.db.QueryRow(
-		`SELECT id, domain_id, issuer, subject, serial, not_before, not_after,
-		        fingerprint, protocol, status, sans, last_checked, created_at, updated_at
-		 FROM certificates WHERE domain_id = ? ORDER BY last_checked DESC LIMIT 1`, domainID,
-	)
-	return scanCert(row)
-}
-
 func (r *certRepo) ListFiltered(filter models.CertFilter) ([]*models.Certificate, error) {
 	var clauses []string
 	var args []any

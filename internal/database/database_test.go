@@ -65,7 +65,7 @@ func TestMigrate_CreatesTables(t *testing.T) {
 		tables = append(tables, name)
 	}
 
-	expected := []string{"certificates", "domains", "notification_profiles", "users"}
+	expected := []string{"certificates", "domains", "users"}
 	for _, want := range expected {
 		found := false
 		for _, got := range tables {
