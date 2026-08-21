@@ -617,20 +617,129 @@ func TestScanDomainDoesNotCollapseDistinctRenewals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// All three distinct certs must survive — issuer+subject alone must not
-	// collapse distinct renewals, and the valid cert must not be overwritten
-	// by expired ones.
-	if len(certs) != 3 {
-		t.Fatalf("expected 3 distinct certificates kept, got %d", len(certs))
+	// Expired historical renewals must not be ingested at all; only the
+	// current valid cert is stored, and it must not be collapsed or
+	// overwritten by the expired ones.
+	if len(certs) != 1 {
+		t.Fatalf("expected 1 certificate (expired ones skipped), got %d", len(certs))
 	}
-	validCount := 0
-	for _, c := range certs {
-		if c.Status == "valid" {
-			validCount++
+	if certs[0].Fingerprint != "fp-a1" {
+		t.Errorf("expected the valid cert fp-a1 to be stored, got %s", certs[0].Fingerprint)
+	}
+}
+
+func TestScanDomainSkipsExpiredCertificates(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	now := time.Now()
+	ct := &fakeMultiScanner{results: []*discovery.Result{
+		{Subject: "*.example.com", Issuer: "CA1", Serial: "A1",
+			NotBefore: now.Add(-time.Hour), NotAfter: now.Add(30 * 24 * time.Hour),
+			Fingerprint: "fp-live", Protocol: "ct", Status: "valid", SANs: []string{"*.example.com"}},
+		{Subject: "*.example.com", Issuer: "CA2", Serial: "B2",
+			NotBefore: now.Add(-400 * 24 * time.Hour), NotAfter: now.Add(-10 * 24 * time.Hour),
+			Fingerprint: "fp-old", Protocol: "ct", Status: "expired", SANs: []string{"*.example.com"}},
+	}}
+	reg := discovery.NewRegistry()
+	reg.Register(ct)
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		if _, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if validCount != 1 {
-		t.Errorf("expected 1 valid cert to survive, got %d", validCount)
+	certs, err := certRepo.ListByDomainID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the valid cert is stored; repeated scans must not re-add the
+	// expired historical one.
+	if len(certs) != 1 {
+		t.Fatalf("expected 1 certificate after repeated scans, got %d", len(certs))
+	}
+	if certs[0].Fingerprint != "fp-live" {
+		t.Errorf("expected fp-live, got %s", certs[0].Fingerprint)
+	}
+}
+
+func TestScanDomainAllExpiredSavesNothing(t *testing.T) {
+	dir, err := os.MkdirTemp("", "certwatch-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, err := database.Open("sqlite", dir+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	domainRepo := repository.NewDomainRepository(db)
+	certRepo := repository.NewCertificateRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+
+	now := time.Now()
+	ct := &fakeMultiScanner{results: []*discovery.Result{
+		{Subject: "*.example.com", Issuer: "CA1", Serial: "A1",
+			NotBefore: now.Add(-800 * 24 * time.Hour), NotAfter: now.Add(-400 * 24 * time.Hour),
+			Fingerprint: "fp-old1", Protocol: "ct", Status: "expired", SANs: []string{"*.example.com"}},
+		{Subject: "*.example.com", Issuer: "CA2", Serial: "B2",
+			NotBefore: now.Add(-400 * 24 * time.Hour), NotAfter: now.Add(-10 * 24 * time.Hour),
+			Fingerprint: "fp-old2", Protocol: "ct", Status: "expired", SANs: []string{"*.example.com"}},
+	}}
+	reg := discovery.NewRegistry()
+	reg.Register(ct)
+
+	svc := NewDomainService(domainRepo, certRepo, reg, tagRepo, context.Background(), 3, 100, 30*time.Second)
+	t.Cleanup(svc.StopScanQueue)
+
+	d, err := svc.AddDomain("example.com", "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cert, err := svc.ScanDomain(context.Background(), d.ID, 30*time.Second)
+	if err != nil {
+		t.Fatalf("expected no error when all results are expired, got %v", err)
+	}
+	if cert != nil {
+		t.Errorf("expected nil certificate when all results are expired, got %+v", cert)
+	}
+	certs, err := certRepo.ListByDomainID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certs) != 0 {
+		t.Fatalf("expected 0 stored certificates (no expired ingestion, no error placeholder), got %d", len(certs))
 	}
 }
 

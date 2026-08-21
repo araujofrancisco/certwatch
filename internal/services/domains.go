@@ -169,13 +169,29 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 			continue
 		}
 		for _, r := range results {
-			if r != nil {
-				saved = append(saved, s.saveCertificate(d.ID, r))
+			if r == nil {
+				continue
 			}
+			// Never ingest expired certificates. CT logs replay every
+			// historical issuance for a domain, so without this filter a
+			// purged expired cert would be re-added on the next scan. The
+			// predicate mirrors DeleteExpired/DeleteExpiredByDomain so what
+			// the purge removes is exactly what ingestion refuses to store.
+			if !r.NotAfter.IsZero() && r.NotAfter.Before(time.Now()) {
+				continue
+			}
+			saved = append(saved, s.saveCertificate(d.ID, r))
 		}
 	}
 
 	if len(saved) == 0 {
+		if lastErr == nil {
+			// Scanners succeeded but found no live certificate (all results
+			// were expired). Not an error: record nothing and let the domain
+			// simply have no stored cert.
+			slog.Info("scan found no valid certificates", "domain_id", d.ID, "domain", d.Domain)
+			return nil, nil
+		}
 		cert := &models.Certificate{
 			DomainID:    d.ID,
 			Protocol:    "unknown",
