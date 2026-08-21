@@ -52,7 +52,7 @@ func setupAPI(t *testing.T) (*Handler, *auth.Authenticator, string) {
 
 	rl := middleware.NewRateLimiter(100, time.Minute)
 	readRL := middleware.NewRateLimiter(1000, time.Minute)
-	handler := NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rl, readRL)
+	handler := NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rl, readRL, false)
 
 	token, _ := authenticator.GenerateToken(1, "admin@test.com")
 	return handler, authenticator, token

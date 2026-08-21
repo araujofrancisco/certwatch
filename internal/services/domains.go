@@ -138,10 +138,13 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 
 	// HTTPS is fast (a single handshake); CT aggregation fans out across
 	// multiple providers and should get the bulk of the scan budget so a
-	// slow provider does not starve the rest.
-	ctBudget := timeout - 5*time.Second
+	// slow provider does not starve the rest. A small floor keeps very short
+	// timeouts usable, but HTTPS+CT combined must never exceed the
+	// operator-configured timeout.
+	const httpsBudget = 5 * time.Second
+	ctBudget := timeout - httpsBudget
 	if ctBudget < 15*time.Second {
-		ctBudget = 15 * time.Second
+		ctBudget = min(15*time.Second, timeout/2)
 	}
 	priorityOrder := []struct {
 		protocol string
@@ -190,19 +193,40 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 			slog.Info("scan found no valid certificates", "domain_id", d.ID, "domain", d.Domain)
 			return nil, nil
 		}
-		cert := &models.Certificate{
-			DomainID:    d.ID,
-			Protocol:    "unknown",
-			Status:      "error",
-			LastChecked: time.Now(),
-		}
-		if err := s.certs.Create(ctx, cert); err != nil {
-			slog.Error("failed to save error cert", "domain_id", d.ID, "error", err)
-		}
+		cert := s.recordScanError(ctx, d.ID)
 		return cert, fmt.Errorf("all scanners failed: %w", lastErr)
 	}
 
 	return saved[0], nil
+}
+
+// recordScanError records a failed scan. Repeated failures update the
+// existing error row in place (refreshing LastChecked) instead of inserting a
+// fresh row per scan, so a long-unreachable domain does not accumulate error
+// rows.
+func (s *DomainService) recordScanError(ctx context.Context, domainID int64) *models.Certificate {
+	if existing, err := s.certs.ListByDomainID(ctx, domainID); err == nil {
+		for _, c := range existing {
+			if c.Status != "error" {
+				continue
+			}
+			c.LastChecked = time.Now()
+			if err := s.certs.Update(ctx, c); err != nil {
+				slog.Error("failed to refresh error cert", "domain_id", domainID, "error", err)
+			}
+			return c
+		}
+	}
+	cert := &models.Certificate{
+		DomainID:    domainID,
+		Protocol:    "unknown",
+		Status:      "error",
+		LastChecked: time.Now(),
+	}
+	if err := s.certs.Create(ctx, cert); err != nil {
+		slog.Error("failed to save error cert", "domain_id", domainID, "error", err)
+	}
+	return cert
 }
 
 // scanAll gathers every certificate a scanner reports for a domain. Scanners
@@ -325,16 +349,17 @@ func (s *DomainService) saveCertificate(ctx context.Context, domainID int64, res
 
 	if err := s.certs.Create(ctx, cert); err != nil {
 		slog.Error("failed to save certificate", "domain_id", domainID, "error", err)
+		return cert
 	}
 
 	// Renewal purge: when a scan inserts a NEW valid certificate, opportunistically
 	// remove old expired certificates for the same domain so history does not
-	// accumulate across renewal cycles. This only fires for genuinely new valid
-	// certs — inserting an expired historical cert (common from CT logs) must not
-	// trigger a purge, since that cert itself is expired and would be deleted
-	// immediately, and a purge must never run while expired certs are being
-	// inserted in bulk (it could delete valid rows that an interleaving scan
-	// has not yet normalized).
+	// accumulate across renewal cycles. This only fires when the insert actually
+	// succeeded and only for genuinely new valid certs — inserting an expired
+	// historical cert (common from CT logs) must not trigger a purge, since that
+	// cert itself is expired and would be deleted immediately, and a purge must
+	// never run while expired certs are being inserted in bulk (it could delete
+	// valid rows that an interleaving scan has not yet normalized).
 	if cert.Status == "valid" {
 		if n, err := s.certs.DeleteExpiredByDomain(ctx, domainID); err != nil {
 			slog.Error("failed to purge expired certificates on renewal", "domain_id", domainID, "error", err)

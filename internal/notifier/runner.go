@@ -93,8 +93,8 @@ func (r *Runner) Run(ctx context.Context) {
 		}
 		loc, err := time.LoadLocation(locName)
 		if err != nil {
-			slog.Warn("invalid timezone, falling back to America/New_York", "profile", profile.Name, "timezone", locName)
-			loc = time.FixedZone("America/New_York", -5*60*60)
+			slog.Warn("invalid timezone, falling back to UTC", "profile", profile.Name, "timezone", locName)
+			loc = time.UTC
 		}
 		sched.Add(&scheduler.Job{
 			Name:     profile.Name,
@@ -158,7 +158,6 @@ func (r *Runner) checkImmediate(ctx context.Context, n *Notifier, matcher *Match
 			if r.seen(ctx, key) {
 				continue
 			}
-			r.mark(ctx, key, now)
 
 			domain, err := r.domains.GetDomain(ctx, c.DomainID)
 			if err != nil {
@@ -168,12 +167,16 @@ func (r *Runner) checkImmediate(ctx context.Context, n *Notifier, matcher *Match
 				Domain:      domain.Domain,
 				Issuer:      c.Issuer,
 				Expires:     c.NotAfter,
-				DaysRemains: m.Threshold,
+				DaysRemains: daysRemaining(c.NotAfter, now),
 			}
 			subject, body := templates.ImmediateAlert(info)
 			if err := n.SendEmail(ctx, m.Profile.Recipients, subject, body); err != nil {
 				slog.Error("send immediate notification", "error", err)
+				continue
 			}
+			// Mark as notified only after a successful send so transient
+			// delivery failures are retried on the next sweep.
+			r.mark(ctx, key, now)
 		}
 	}
 }

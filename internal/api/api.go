@@ -21,16 +21,17 @@ type Handler struct {
 	db          *sql.DB
 	rateLimiter *middleware.RateLimiter
 	readLimiter *middleware.RateLimiter
+	trustProxy  bool
 }
 
-func NewHandler(domains *services.DomainService, certs *services.CertificateService, authSvc *services.AuthService, authN *auth.Authenticator, db *sql.DB, rateLimiter, readLimiter *middleware.RateLimiter) *Handler {
-	return &Handler{domains: domains, certs: certs, authSvc: authSvc, authN: authN, db: db, rateLimiter: rateLimiter, readLimiter: readLimiter}
+func NewHandler(domains *services.DomainService, certs *services.CertificateService, authSvc *services.AuthService, authN *auth.Authenticator, db *sql.DB, rateLimiter, readLimiter *middleware.RateLimiter, trustProxyHeaders bool) *Handler {
+	return &Handler{domains: domains, certs: certs, authSvc: authSvc, authN: authN, db: db, rateLimiter: rateLimiter, readLimiter: readLimiter, trustProxy: trustProxyHeaders}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	authMiddleware := middleware.Auth(h.authN)
-	rateLimit := middleware.RateLimit(h.rateLimiter)
-	readLimit := middleware.RateLimit(h.readLimiter)
+	rateLimit := middleware.RateLimit(h.rateLimiter, h.trustProxy)
+	readLimit := middleware.RateLimit(h.readLimiter, h.trustProxy)
 
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /api/version", h.version)

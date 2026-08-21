@@ -305,15 +305,16 @@ type CertBucketCounts struct {
 
 // CountExpiryBuckets counts certificates as expired (not_after <
 // warningStart), warning (warningStart <= not_after < warningEnd), or healthy
-// (null or >= warningEnd). Callers pass precomputed cutoff times so the
-// bucket boundaries live in one place, next to their consumers. Both stored
-// values and bound parameters are UTC (see utcOrZero), so plain string
-// comparison is order-correct.
+// (>= warningEnd). Rows with a NULL not_after are failed scans (no real
+// certificate was seen) and belong in no bucket. Callers pass precomputed
+// cutoff times so the bucket boundaries live in one place, next to their
+// consumers. Both stored values and bound parameters are UTC (see utcOrZero),
+// so plain string comparison is order-correct.
 func (r *certRepo) CountExpiryBuckets(ctx context.Context, warningStart, warningEnd time.Time) (CertBucketCounts, error) {
 	var c CertBucketCounts
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
-			COALESCE(SUM(CASE WHEN not_after IS NULL OR not_after >= ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN not_after IS NOT NULL AND not_after >= ? THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN not_after IS NOT NULL AND not_after >= ? AND not_after < ? THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN not_after IS NOT NULL AND not_after < ? THEN 1 ELSE 0 END), 0)
 		FROM certificates`,

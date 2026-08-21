@@ -86,7 +86,7 @@ func Auth(authenticator *auth.Authenticator) func(http.Handler) http.Handler {
 	}
 }
 
-func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+func CORS(allowedOrigins []string, allowLocalhost bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
@@ -97,7 +97,7 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 					break
 				}
 			}
-			if allowed == "" && isLocalhostOrigin(origin) {
+			if allowed == "" && allowLocalhost && isLocalhostOrigin(origin) {
 				allowed = origin
 			}
 			if allowed != "" {
@@ -212,13 +212,20 @@ func (rl *RateLimiter) Allow(key string) bool {
 	return true
 }
 
-func clientIP(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		parts := strings.Split(fwd, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	if real := r.Header.Get("X-Real-IP"); real != "" {
-		return strings.TrimSpace(real)
+// ClientIP returns the best-effort client address for rate limiting. Proxy
+// headers are only honored when trustProxy is true: they are attacker
+// controlled on direct connections and would let clients rotate their identity
+// to bypass the limiter. When trusted, the right-most X-Forwarded-For entry is
+// used, since proxies append and client-supplied leftmost values can be forged.
+func ClientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			parts := strings.Split(fwd, ",")
+			return strings.TrimSpace(parts[len(parts)-1])
+		}
+		if real := r.Header.Get("X-Real-IP"); real != "" {
+			return strings.TrimSpace(real)
+		}
 	}
 	ip := r.RemoteAddr
 	if addr := strings.LastIndex(ip, ":"); addr != -1 {
@@ -227,10 +234,10 @@ func clientIP(r *http.Request) string {
 	return ip
 }
 
-func RateLimit(rl *RateLimiter) func(http.Handler) http.Handler {
+func RateLimit(rl *RateLimiter, trustProxyHeaders bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := clientIP(r)
+			ip := ClientIP(r, trustProxyHeaders)
 			if !rl.Allow(ip) {
 				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
 				return

@@ -48,8 +48,8 @@ SQLite via `modernc.org/sqlite` (pure Go, no CGO). **`EnsureDir` before `Open`**
 - **Web UI**: Go embed, no build step. 9 page templates (7 × `layout.html`, 2 × `auth-layout.html`) + raw `docs.html` for Scalar UI.
 - **Server-side filtering**: `GET /api/domains` and `GET /api/certificates` accept `q`, `status`, `protocol`, `domain_id`, `expiring`, `expired`, `enabled`. Dynamic SQL with `LIKE`.
 - **JWT**: default secret `change-me-in-production` triggers startup warning.
-- **Rate limiting**: 10 req/min per IP, sliding window, auth endpoints only.
-- **CORS**: config via `server.cors_allowed_origins` or `CERTWATCH_SERVER_CORS_ORIGINS` env. Defaults: `http://localhost:8080`, `http://127.0.0.1:8080`. Any localhost origin auto-accepted.
+- **Rate limiting**: 10 req/min per IP, sliding window, auth endpoints only. Proxy headers trusted only when `server.trust_proxy_headers` is set.
+- **CORS**: config via `server.cors_allowed_origins` or `CERTWATCH_SERVER_CORS_ORIGINS` env. Defaults: `http://localhost:8080`, `http://127.0.0.1:8080`. Any localhost origin auto-accepted unless `server.allow_localhost_origins` is disabled.
 - **CI** (`.github/workflows/ci.yml`): lint → test → build → check tidy. Go 1.25, golangci-lint installed from source.
 - **Tests**: real SQLite via `os.MkdirTemp` — no mocks or fixtures.
 - **`-health` flag**: Docker healthcheck, tries config port → falls back to 8080.
