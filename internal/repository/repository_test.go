@@ -420,7 +420,7 @@ func TestCertificateRepository_ExpiryAggregates(t *testing.T) {
 		{DomainID: d1.ID, Issuer: "CA", Status: "valid", NotAfter: now.Add(400 * time.Hour), LastChecked: now.Add(2 * time.Hour)},
 		{DomainID: d2.ID, Issuer: "CA", Status: "valid", NotAfter: now.Add(48 * time.Hour), LastChecked: now},
 		{DomainID: d2.ID, Issuer: "CA", Status: "valid", NotAfter: now.Add(-24 * time.Hour), LastChecked: now}, // expired; ties on last_checked with row above
-		{DomainID: d1.ID, Issuer: "CA", Status: "unknown", LastChecked: now},                                   // null expiry → healthy
+		{DomainID: d1.ID, Issuer: "CA", Status: "unknown", LastChecked: now},                                   // null expiry (failed scan) → no bucket
 	}
 	for _, c := range certs {
 		if err := certRepo.Create(ctx, c); err != nil {
@@ -434,8 +434,8 @@ func TestCertificateRepository_ExpiryAggregates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts.Healthy != 2 {
-		t.Errorf("healthy = %d, want 2", counts.Healthy)
+	if counts.Healthy != 1 {
+		t.Errorf("healthy = %d, want 1", counts.Healthy)
 	}
 	if counts.Warning != 1 {
 		t.Errorf("warning = %d, want 1", counts.Warning)

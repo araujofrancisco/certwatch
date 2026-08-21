@@ -76,8 +76,8 @@ notifications:
 ### Security
 
 - **Security headers**: All responses include CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy, X-XSS-Protection.
-- **CORS**: Configurable allowed origins via `server.cors_allowed_origins` (YAML) or `CERTWATCH_SERVER_CORS_ORIGINS` (comma-separated). Default: `http://localhost:8080`, `http://127.0.0.1:8080`.
-- **Rate limiting**: Auth endpoints are limited to 10 req/min per IP (sliding window, port-stripped).
+- **CORS**: Configurable allowed origins via `server.cors_allowed_origins` (YAML) or `CERTWATCH_SERVER_CORS_ORIGINS` (comma-separated). Default: `http://localhost:8080`, `http://127.0.0.1:8080`. Any localhost origin is additionally auto-accepted as a development convenience; disable with `server.allow_localhost_origins: false` (or `CERTWATCH_SERVER_ALLOW_LOCALHOST_ORIGINS=false`) in production.
+- **Rate limiting**: Auth endpoints are limited to 10 req/min per IP (sliding window, port-stripped). Proxy headers (`X-Forwarded-For`, `X-Real-IP`) are only honored when `server.trust_proxy_headers` is enabled — enable it only when running behind a trusted reverse proxy, otherwise clients could spoof their IP and bypass the limit.
 - **Password policy**: Minimum 8 characters on registration.
 - **Input limits**: Request body 1 MB max; description ≤500 chars; group ≤100 chars.
 - **Info disclosure**: Registration errors are generic — no email enumeration.
@@ -90,6 +90,8 @@ notifications:
 | `CERTWATCH_SERVER_HOST` | `server.host` | `0.0.0.0` |
 | `CERTWATCH_SERVER_PORT` | `server.port` | `8080` |
 | `CERTWATCH_SERVER_CORS_ORIGINS` | `server.cors_allowed_origins` | `http://localhost:8080`, `http://127.0.0.1:8080` |
+| `CERTWATCH_SERVER_TRUST_PROXY_HEADERS` | `server.trust_proxy_headers` | `false` |
+| `CERTWATCH_SERVER_ALLOW_LOCALHOST_ORIGINS` | `server.allow_localhost_origins` | `true` |
 | `CERTWATCH_DATABASE_DRIVER` | `database.driver` | `sqlite` |
 | `CERTWATCH_DATABASE_DSN` | `database.dsn` | `certwatch.db` |
 | `CERTWATCH_LOGGING_LEVEL` | `logging.level` | `info` |

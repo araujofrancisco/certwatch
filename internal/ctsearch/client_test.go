@@ -185,10 +185,11 @@ func TestClientSkipsProviderInCooldown(t *testing.T) {
 		}
 	}
 
-	// Third call: provider is skipped, so no error and no results.
+	// Third call: provider is skipped entirely, which must surface as an
+	// error rather than a silent empty result.
 	res, err := c.SearchByDomain(context.Background(), "example.com", false)
-	if err != nil {
-		t.Fatalf("expected no error when provider is skipped, got %v", err)
+	if err == nil {
+		t.Fatal("expected error when all providers are in cooldown")
 	}
 	if len(res.ProvidersQueried) != 0 || len(res.Results) != 0 {
 		t.Errorf("expected provider skipped entirely, got %+v", res)
@@ -220,8 +221,8 @@ func TestBreakerResetsOnSuccess(t *testing.T) {
 		}
 	}
 	res, err := c.SearchByDomain(context.Background(), "example.com", false)
-	if err != nil {
-		t.Fatalf("expected skip after re-trip, got %v", err)
+	if err == nil {
+		t.Fatal("expected error after re-trip (all providers in cooldown)")
 	}
 	if len(res.ProvidersQueried) != 0 {
 		t.Errorf("expected provider skipped, got %+v", res)

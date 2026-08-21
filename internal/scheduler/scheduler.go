@@ -243,9 +243,21 @@ func (s *Scheduler) runJob(ctx context.Context, job *Job) {
 			}
 			lastRun = t
 			slog.Info("running scheduled job", "job", job.Name, "time", t.Format(time.RFC3339))
-			job.Handler(ctx)
+			runJob(job, ctx)
 		}
 	}
+}
+
+// runJob invokes a job handler with panic isolation: scheduled handlers run on
+// bare goroutines with no HTTP recovery middleware, so a panicking handler
+// would otherwise take down the whole process.
+func runJob(job *Job, ctx context.Context) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("scheduled job panicked", "job", job.Name, "panic", rec)
+		}
+	}()
+	job.Handler(ctx)
 }
 
 // sleepCtx sleeps for d, returning false if ctx was cancelled first.

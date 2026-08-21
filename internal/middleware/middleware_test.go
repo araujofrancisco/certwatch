@@ -34,7 +34,7 @@ func TestRecovery(t *testing.T) {
 }
 
 func TestCORS(t *testing.T) {
-	handler := CORS([]string{"http://localhost:8080"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORS([]string{"http://localhost:8080"}, true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("OPTIONS", "/test", nil)
@@ -137,14 +137,20 @@ func TestClientIP(t *testing.T) {
 		name     string
 		headers  map[string]string
 		remote   string
+		trust    bool
 		expected string
 	}{
-		{"x-forwarded-for", map[string]string{"X-Forwarded-For": "1.2.3.4"}, "5.6.7.8:1234", "1.2.3.4"},
-		{"x-forwarded-for-multi", map[string]string{"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, "9.9.9.9:99", "1.2.3.4"},
-		{"x-real-ip", map[string]string{"X-Real-IP": "4.3.2.1"}, "5.6.7.8:1234", "4.3.2.1"},
-		{"remote-addr-no-port", nil, "1.2.3.4", "1.2.3.4"},
-		{"remote-addr-with-port", nil, "1.2.3.4:8080", "1.2.3.4"},
-		{"x-forwarded-for-wins", map[string]string{"X-Forwarded-For": "1.1.1.1", "X-Real-IP": "2.2.2.2"}, "3.3.3.3:80", "1.1.1.1"},
+		{"x-forwarded-for", map[string]string{"X-Forwarded-For": "1.2.3.4"}, "5.6.7.8:1234", true, "1.2.3.4"},
+		// Right-most entry wins when trusted: client-supplied leftmost values
+		// can be forged through an appending proxy.
+		{"x-forwarded-for-multi", map[string]string{"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, "9.9.9.9:99", true, "5.6.7.8"},
+		{"x-real-ip", map[string]string{"X-Real-IP": "4.3.2.1"}, "5.6.7.8:1234", true, "4.3.2.1"},
+		{"remote-addr-no-port", nil, "1.2.3.4", false, "1.2.3.4"},
+		{"remote-addr-with-port", nil, "1.2.3.4:8080", false, "1.2.3.4"},
+		{"x-forwarded-for-wins", map[string]string{"X-Forwarded-For": "1.1.1.1", "X-Real-IP": "2.2.2.2"}, "3.3.3.3:80", true, "1.1.1.1"},
+		// Untrusted proxy headers must be ignored entirely.
+		{"untrusted-xff-ignored", map[string]string{"X-Forwarded-For": "6.6.6.6"}, "5.6.7.8:1234", false, "5.6.7.8"},
+		{"untrusted-x-real-ip-ignored", map[string]string{"X-Real-IP": "6.6.6.6"}, "5.6.7.8:1234", false, "5.6.7.8"},
 	}
 
 	for _, tt := range tests {
@@ -154,7 +160,7 @@ func TestClientIP(t *testing.T) {
 			for k, v := range tt.headers {
 				req.Header.Set(k, v)
 			}
-			ip := clientIP(req)
+			ip := ClientIP(req, tt.trust)
 			if ip != tt.expected {
 				t.Errorf("expected %q, got %q", tt.expected, ip)
 			}

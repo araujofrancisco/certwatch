@@ -32,6 +32,11 @@ type ServerConfig struct {
 	RateLimitWindow    string   `yaml:"rate_limit_window"`
 	ReadRateLimit      int      `yaml:"read_rate_limit"`
 	RequestTimeout     string   `yaml:"request_timeout"`
+	TrustProxyHeaders  bool     `yaml:"trust_proxy_headers"`
+	// AllowLocalhostOrigins reflects any localhost Origin as allowed. It is a
+	// development convenience; disable in production behind a real origin
+	// allowlist.
+	AllowLocalhostOrigins bool `yaml:"allow_localhost_origins"`
 }
 
 type DatabaseConfig struct {
@@ -88,6 +93,7 @@ func Default() Config {
 			Host:               "0.0.0.0",
 			Port:               8080,
 			CORSAllowedOrigins: []string{"http://localhost:8080", "http://127.0.0.1:8080"},
+			AllowLocalhostOrigins: true,
 			RateLimit:          10,
 			RateLimitWindow:    "1m",
 			ReadRateLimit:      300,
@@ -236,6 +242,16 @@ func applyEnvOverrides(cfg Config) Config {
 	if v := os.Getenv("CERTWATCH_SERVER_REQUEST_TIMEOUT"); v != "" {
 		cfg.Server.RequestTimeout = v
 	}
+	if v := os.Getenv("CERTWATCH_SERVER_TRUST_PROXY_HEADERS"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Server.TrustProxyHeaders = b
+		}
+	}
+	if v := os.Getenv("CERTWATCH_SERVER_ALLOW_LOCALHOST_ORIGINS"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Server.AllowLocalhostOrigins = b
+		}
+	}
 	return cfg
 }
 
@@ -254,6 +270,8 @@ func (c Config) LogValue() slog.Value {
 			slog.String("rate_limit_window", c.Server.RateLimitWindow),
 			slog.Int("read_rate_limit", c.Server.ReadRateLimit),
 			slog.String("request_timeout", c.Server.RequestTimeout),
+			slog.Bool("trust_proxy_headers", c.Server.TrustProxyHeaders),
+			slog.Bool("allow_localhost_origins", c.Server.AllowLocalhostOrigins),
 		),
 		slog.Group("database",
 			slog.String("driver", c.Database.Driver),

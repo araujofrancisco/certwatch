@@ -86,7 +86,10 @@ func (e Entry) Covers(domain string) bool {
 		}
 		if strings.HasPrefix(name, "*.") {
 			suffix := name[1:] // keep leading dot: ".example.com"
-			if strings.HasSuffix(domain, suffix) {
+			// RFC 6125: a wildcard matches exactly one label, so the domain
+			// must end with the suffix and retain exactly that one extra
+			// label — a.b.example.com is NOT covered by *.example.com.
+			if strings.HasSuffix(domain, suffix) && !strings.Contains(strings.TrimSuffix(domain, suffix), ".") {
 				return true
 			}
 			if domain == name[2:] {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/araujofrancisco/certwatch/internal/middleware"
 	"github.com/araujofrancisco/certwatch/internal/models"
 )
 
@@ -93,7 +94,11 @@ func (h *Handler) RegisterUIRoutes(mux *http.ServeMux) {
 		renderPage(w, "domains", pageData{Title: "Domains", Active: "domains"})
 	})
 
-	mux.HandleFunc("GET /domains/", func(w http.ResponseWriter, r *http.Request) {
+	// The domain detail page performs a server-side privileged lookup, so it
+	// must not be reachable without a valid token (unlike the other shell
+	// pages, which are static and fetch data client-side via the JSON API).
+	authMiddleware := middleware.Auth(h.authN)
+	mux.Handle("GET /domains/", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/domains/"), "/")
 		idStr := parts[0]
 		id, err := strconv.ParseInt(idStr, 10, 64)
@@ -111,7 +116,7 @@ func (h *Handler) RegisterUIRoutes(mux *http.ServeMux) {
 			Active: "domains",
 			Domain: domain,
 		})
-	})
+	})))
 
 	mux.HandleFunc("GET /certificates", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "certificates", pageData{Title: "Certificates", Active: "certificates"})

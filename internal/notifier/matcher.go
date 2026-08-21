@@ -47,6 +47,17 @@ func (m *Matcher) FindMatches(certs []models.Certificate) []MatchResult {
 	return results
 }
 
+// daysRemaining returns the number of full 24h periods between now and t.
+// Certificates that are still valid but expire within the next 24 hours
+// return 0; expired certificates return a negative value (full days past).
+func daysRemaining(t, now time.Time) int {
+	d := t.Sub(now)
+	if d >= 0 {
+		return int(d / (24 * time.Hour))
+	}
+	return -int(-d / (24 * time.Hour))
+}
+
 func (m *Matcher) matchThreshold(certs []models.Certificate, threshold int, now time.Time) []models.Certificate {
 	var matched []models.Certificate
 	deadline := now.AddDate(0, 0, threshold)
@@ -73,14 +84,15 @@ func (m *Matcher) BuildDailyDigest(certs []models.Certificate, domains []models.
 		if c.NotAfter.IsZero() {
 			continue
 		}
-		days := int(c.NotAfter.Sub(now).Hours() / 24)
+		days := daysRemaining(c.NotAfter, now)
 		info := templates.CertInfo{
 			Domain:      domainMap[c.DomainID],
 			Issuer:      c.Issuer,
 			Expires:     c.NotAfter,
 			DaysRemains: days,
 		}
-		if days <= 0 {
+		if !c.NotAfter.After(now) || days <= 0 {
+			// Either already expired or expiring within the next 24h.
 			section.Critical = append(section.Critical, info)
 		} else if days <= 14 {
 			section.Warnings = append(section.Warnings, info)
@@ -100,10 +112,14 @@ func (m *Matcher) BuildWeeklyReport(certs []models.Certificate, domains []models
 		if c.NotAfter.IsZero() {
 			continue
 		}
-		days := int(c.NotAfter.Sub(now).Hours() / 24)
-		if days <= 0 {
+		// A cert that is still valid (even by minutes) must not be counted
+		// as expired.
+		if !c.NotAfter.After(now) {
 			report.Expired++
-		} else if days <= 14 {
+			continue
+		}
+		days := daysRemaining(c.NotAfter, now)
+		if days <= 14 {
 			report.Warning++
 		} else {
 			report.Healthy++

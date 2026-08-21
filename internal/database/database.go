@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -22,6 +23,10 @@ type DB struct {
 func Open(driver, dsn string) (*DB, error) {
 	slog.Debug("opening database", "driver", driver, "dsn", dsn)
 
+	if driver == "sqlite" {
+		dsn = withSQLitePragmas(dsn)
+	}
+
 	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -32,16 +37,10 @@ func Open(driver, dsn string) (*DB, error) {
 	}
 
 	if driver == "sqlite" {
-		pragmas := []string{
-			"PRAGMA journal_mode=WAL",
-			"PRAGMA busy_timeout=5000",
-			"PRAGMA foreign_keys = ON",
-		}
-		for _, p := range pragmas {
-			if _, err := db.Exec(p); err != nil {
-				return nil, fmt.Errorf("%s: %w", p, err)
-			}
-		}
+		// PRAGMAs are applied via the DSN (withSQLitePragmas) so every pooled
+		// connection gets them: foreign_keys and busy_timeout are
+		// per-connection settings and would be silently lost once
+		// database/sql recycles the first connection.
 		db.SetMaxOpenConns(1)
 		db.SetMaxIdleConns(1)
 		db.SetConnMaxLifetime(time.Hour)
@@ -50,6 +49,21 @@ func Open(driver, dsn string) (*DB, error) {
 	slog.Info("database connected", "driver", driver)
 
 	return &DB{DB: db, driver: driver, dsn: dsn}, nil
+}
+
+// withSQLitePragmas appends per-connection PRAGMA parameters to a SQLite DSN,
+// preserving any user-supplied query parameters.
+func withSQLitePragmas(dsn string) string {
+	pragmas := []string{
+		"_pragma=journal_mode(WAL)",
+		"_pragma=busy_timeout(5000)",
+		"_pragma=foreign_keys(1)",
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + strings.Join(pragmas, "&")
 }
 
 func (db *DB) Close() error {

@@ -73,9 +73,12 @@ func TestScanQueuePending(t *testing.T) {
 }
 
 func TestScanQueuePriority(t *testing.T) {
+	var mu sync.Mutex
 	var order []int64
 	q := newScanQueue(1, 10, 50*time.Millisecond, func(ctx context.Context, domainID int64, timeout time.Duration) (*models.Certificate, error) {
+		mu.Lock()
 		order = append(order, domainID)
+		mu.Unlock()
 		return &models.Certificate{DomainID: domainID}, nil
 	})
 	t.Cleanup(q.Stop)
@@ -83,7 +86,13 @@ func TestScanQueuePriority(t *testing.T) {
 	q.EnqueueScan(context.Background(), 1, false)
 	q.EnqueueScan(context.Background(), 2, false)
 	q.EnqueueScan(context.Background(), 3, true) // high priority bypass
-	waitFor(t, func() bool { return len(order) == 3 })
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(order) == 3
+	})
+	mu.Lock()
+	defer mu.Unlock()
 	if order[0] != 3 {
 		t.Errorf("expected high-priority task first, got order %v", order)
 	}
@@ -193,6 +202,31 @@ func TestScanQueueStopDropsQueuedAndCompletesInFlight(t *testing.T) {
 	}
 
 	if err := q.Enqueue(scanTask{domainID: 9, ctx: context.Background()}); err == nil {
+		t.Error("expected error enqueuing after stop")
+	}
+}
+
+// Regression test: Enqueue must never panic by sending on a closed channel
+// when racing Stop (previously the channels were closed during shutdown).
+func TestScanQueueEnqueueRacingStop(t *testing.T) {
+	var runs int32
+	q := newScanQueue(1, 1000, 50*time.Millisecond, func(ctx context.Context, domainID int64, timeout time.Duration) (*models.Certificate, error) {
+		atomic.AddInt32(&runs, 1)
+		return &models.Certificate{DomainID: domainID}, nil
+	})
+
+	var wg sync.WaitGroup
+	for i := int64(1); i <= 200; i++ {
+		wg.Add(1)
+		go func(id int64) {
+			defer wg.Done()
+			_ = q.Enqueue(scanTask{domainID: id, ctx: context.Background()})
+		}(i)
+	}
+	q.Stop()
+	wg.Wait()
+
+	if err := q.Enqueue(scanTask{domainID: 9999, ctx: context.Background()}); err == nil {
 		t.Error("expected error enqueuing after stop")
 	}
 }

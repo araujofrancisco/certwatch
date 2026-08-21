@@ -163,11 +163,22 @@ func (r *domainRepo) Update(ctx context.Context, d *models.Domain) error {
 }
 
 func (r *domainRepo) Delete(ctx context.Context, id int64) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM certificates WHERE domain_id = ?`, id)
+	// Transactional so a partial failure cannot leave orphaned certificates
+	// or tags behind. domain_tags is deleted explicitly as well: FK cascade
+	// coverage must not be assumed.
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("delete domain: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM certificates WHERE domain_id = ?`, id); err != nil {
 		return fmt.Errorf("delete domain certificates: %w", err)
 	}
-	res, err := r.db.ExecContext(ctx, `DELETE FROM domains WHERE id = ?`, id)
+	if _, err := tx.ExecContext(ctx, `DELETE FROM domain_tags WHERE domain_id = ?`, id); err != nil {
+		return fmt.Errorf("delete domain tags: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM domains WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete domain: %w", err)
 	}
@@ -178,7 +189,7 @@ func (r *domainRepo) Delete(ctx context.Context, id int64) error {
 	if n == 0 {
 		return fmt.Errorf("domain %w", ErrNotFound)
 	}
-	return nil
+	return tx.Commit()
 }
 
 func scanDomain(s scanner) (*models.Domain, error) {

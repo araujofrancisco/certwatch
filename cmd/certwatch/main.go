@@ -149,7 +149,7 @@ func run() error {
 	}
 	rateLimiter := middleware.NewRateLimiter(rateLimit, rateWindow)
 	readRateLimiter := middleware.NewRateLimiter(readRateLimit, rateWindow) // Higher limit for GET requests
-	handler := api.NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rateLimiter, readRateLimiter)
+	handler := api.NewHandler(domainSvc, certSvc, authSvc, authenticator, db.DB, rateLimiter, readRateLimiter, cfg.Server.TrustProxyHeaders)
 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
@@ -162,7 +162,7 @@ func run() error {
 	if t, err := time.ParseDuration(cfg.Server.RequestTimeout); err == nil && t > 0 {
 		requestTimeout = t
 	}
-	wrapped := middleware.Recovery(middleware.Logging(middleware.SecurityHeaders(middleware.Timeout(requestTimeout)(middleware.CORS(corsOrigins)(mux)))))
+	wrapped := middleware.Recovery(middleware.Logging(middleware.SecurityHeaders(middleware.Timeout(requestTimeout)(middleware.CORS(corsOrigins, cfg.Server.AllowLocalhostOrigins)(mux)))))
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

@@ -90,9 +90,24 @@ func NewDefaultClient(cfg Config) *Client {
 	if len(names) == 0 {
 		names = DefaultProviders()
 	}
+	qps := cfg.MaxQPS
+	if qps <= 0 {
+		qps = DefaultConfig().MaxQPS
+	}
+	lim := newIntervalLimiter(time.Duration(float64(time.Second) / qps))
 	httpClient := func() *http.Client { return httpClientBuilder(cfg.Timeout) }
 	factories := map[string]func() Provider{
-		"ctlogsdev":   func() Provider { return NewCTLogsDevProvider("", httpClient()) },
+		"ctlogsdev": func() Provider {
+			p := NewCTLogsDevProvider("", httpClient())
+			// ctlogs.dev fetches one detail page per certificate; gate each
+			// request so the whole fan-out respects the shared rate limit.
+			if lp, ok := p.(interface {
+				SetRequestGate(func(context.Context) error)
+			}); ok {
+				lp.SetRequestGate(lim.wait)
+			}
+			return p
+		},
 		"certspotter": func() Provider { return NewCertSpotterProvider("", cfg.CertSpotterToken, httpClient()) },
 	}
 	providers := make([]Provider, 0, len(names))
@@ -101,7 +116,11 @@ func NewDefaultClient(cfg Config) *Client {
 			providers = append(providers, factory())
 		}
 	}
-	return NewClient(cfg, providers...)
+	return &Client{
+		providers: providers,
+		limiter:   lim,
+		breaker:   newFailureBreaker(),
+	}
 }
 
 // SearchByDomain returns certificates related to domain. When includeSubdomains
@@ -144,11 +163,13 @@ func (c *Client) collect(ctx context.Context, fn func(Provider) ([]Entry, error)
 		wg      sync.WaitGroup
 		lastErr error
 		order   []string
+		skipped int
 	)
 	seen := make(map[string]struct{})
 
 	for _, p := range c.providers {
 		if c.breaker.skip(p.Name()) {
+			skipped++
 			continue
 		}
 		wg.Add(1)
@@ -185,8 +206,16 @@ func (c *Client) collect(ctx context.Context, fn func(Provider) ([]Entry, error)
 	wg.Wait()
 	res.ProvidersQueried = order
 
-	if len(res.Results) == 0 && lastErr != nil {
-		return fmt.Errorf("all CT search providers failed: %w", lastErr)
+	// An empty result set from a lookup where every provider was skipped is
+	// not the same as "the domain has no certificates": surface it as an
+	// error so callers do not record a bogus empty scan.
+	if len(res.Results) == 0 {
+		switch {
+		case lastErr != nil:
+			return fmt.Errorf("all CT search providers failed: %w", lastErr)
+		case skipped == len(c.providers) && skipped > 0:
+			return fmt.Errorf("all CT search providers are in cooldown after repeated failures")
+		}
 	}
 	return nil
 }

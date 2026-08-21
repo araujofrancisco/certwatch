@@ -39,6 +39,7 @@ type scanQueue struct {
 	wg       sync.WaitGroup
 	mu       sync.Mutex
 	closed   bool
+	done     chan struct{}  // closed by Stop to signal shutdown
 	active   map[int64]bool // domainIDs with a task in the queue or actively scanning
 	scan     scanFunc
 	timeout  time.Duration
@@ -63,6 +64,7 @@ func newScanQueue(maxConcurrent, queueSize int, timeout time.Duration, scan scan
 		highPri: make(chan scanTask, queueSize),
 		lowPri:  make(chan scanTask, queueSize),
 		sem:     make(chan struct{}, maxConcurrent),
+		done:    make(chan struct{}),
 		active:  make(map[int64]bool),
 		timeout: timeout,
 		scan:    scan,
@@ -82,22 +84,19 @@ func (q *scanQueue) worker() {
 	defer q.wg.Done()
 	for {
 		var task scanTask
-		var ok bool
 
 		// Block on high-priority first. Only fall through to the
 		// low-priority channel when the high-priority one is empty.
 		select {
-		case task, ok = <-q.highPri:
-			if !ok {
-				return // channel closed, queue is stopping
-			}
+		case task = <-q.highPri:
+		case <-q.done:
+			return // queue is stopping
 		default:
 			select {
-			case task, ok = <-q.highPri:
-			case task, ok = <-q.lowPri:
-			}
-			if !ok {
-				return // channel closed, queue is stopping
+			case task = <-q.highPri:
+			case task = <-q.lowPri:
+			case <-q.done:
+				return // queue is stopping
 			}
 		}
 
@@ -177,6 +176,9 @@ func (q *scanQueue) Enqueue(task scanTask) error {
 	case <-task.ctx.Done():
 		q.unmark(task.domainID)
 		return task.ctx.Err()
+	case <-q.done:
+		q.unmark(task.domainID)
+		return fmt.Errorf("scan queue is stopped")
 	}
 }
 
@@ -197,6 +199,9 @@ func (q *scanQueue) EnqueueScan(ctx context.Context, domainID int64, priority bo
 // dropped; in-flight scans run to completion (honoring their contexts). It
 // blocks until all workers exit and logs a completion summary. Stop is
 // idempotent: calling it more than once is safe.
+//
+// Shutdown uses the done channel rather than closing the task channels so a
+// concurrent Enqueue can never send on a closed channel.
 func (q *scanQueue) Stop() {
 	q.mu.Lock()
 	if q.closed {
@@ -204,6 +209,7 @@ func (q *scanQueue) Stop() {
 		return
 	}
 	q.closed = true
+	close(q.done)
 	q.mu.Unlock()
 
 	dropped := 0
@@ -223,8 +229,6 @@ drain:
 		}
 	}
 
-	close(q.highPri)
-	close(q.lowPri)
 	q.wg.Wait()
 
 	slog.Info("scan queue stopped",
@@ -240,7 +244,8 @@ func (q *scanQueue) Pending() int {
 	return len(q.highPri) + len(q.lowPri)
 }
 
-// InFlight returns the number of tasks currently being scanned.
+// InFlight returns the number of domains with a task queued or actively
+// being scanned.
 func (q *scanQueue) InFlight() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()

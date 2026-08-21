@@ -29,6 +29,10 @@ type ctLogsDevProvider struct {
 	maxCerts int
 	// maxResponseBytes caps a single HTML page download.
 	maxResponseBytes int64
+	// gate, when non-nil, runs before each HTTP request so the search call and
+	// its per-certificate detail fetches all share the aggregator's global
+	// rate limiter instead of bypassing it.
+	gate func(context.Context) error
 }
 
 // NewCTLogsDevProvider builds a ctlogs.dev-backed provider. baseURL defaults to
@@ -50,6 +54,13 @@ func NewCTLogsDevProvider(baseURL string, client *http.Client) Provider {
 }
 
 func (p *ctLogsDevProvider) Name() string { return "ctlogs.dev" }
+
+// SetRequestGate attaches a per-request throttle. It exists so the aggregator
+// can make this provider's individual page fetches participate in the shared
+// rate limit.
+func (p *ctLogsDevProvider) SetRequestGate(g func(context.Context) error) {
+	p.gate = g
+}
 
 func (p *ctLogsDevProvider) SearchByDomain(ctx context.Context, domain string, _ bool) ([]Entry, error) {
 	u := fmt.Sprintf("%s/search?q=%s", p.baseURL, url.QueryEscape(domain))
@@ -88,6 +99,11 @@ func (p *ctLogsDevProvider) SearchByDomain(ctx context.Context, domain string, _
 // fetch GETs u, following redirects (the search endpoint redirects to a
 // hashed result URL), and returns the response body capped at maxResponseBytes.
 func (p *ctLogsDevProvider) fetch(ctx context.Context, u string) ([]byte, error) {
+	if p.gate != nil {
+		if err := p.gate(ctx); err != nil {
+			return nil, fmt.Errorf("ctlogs.dev: rate limit wait: %w", err)
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("ctlogs.dev: build request: %w", err)

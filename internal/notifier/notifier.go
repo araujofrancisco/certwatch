@@ -65,13 +65,26 @@ func (n *Notifier) SendEmail(ctx context.Context, to []string, subject, body str
 		return fmt.Errorf("dial %s: %w", addr, err)
 	}
 	defer conn.Close()
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(sendTimeout)
+
+	// Bound all subsequent I/O (AUTH/MAIL/DATA) by both the send timeout and
+	// the context, so cancelling ctx aborts an in-flight send instead of
+	// letting it run to completion.
+	deadline := time.Now().Add(sendTimeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
 		return fmt.Errorf("set deadline: %w", err)
 	}
+	ioDone := make(chan struct{})
+	defer close(ioDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now()) // unblock pending reads/writes
+		case <-ioDone:
+		}
+	}()
 
 	tlsCfg := n.tlsCfg
 	var client *smtp.Client
