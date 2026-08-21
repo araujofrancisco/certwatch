@@ -9,9 +9,9 @@ import (
 )
 
 type inventoryEntry struct {
-	Domain       *models.Domain     `json:"domain"`
-	LatestCert   *models.Certificate `json:"latest_cert"`
-	DaysRemaining int                `json:"days_remaining"`
+	Domain        *models.Domain      `json:"domain"`
+	LatestCert    *models.Certificate `json:"latest_cert"`
+	DaysRemaining int                 `json:"days_remaining"`
 }
 
 type inventoryReport struct {
@@ -29,13 +29,13 @@ type summaryStats struct {
 }
 
 func (h *Handler) inventoryReport(w http.ResponseWriter, r *http.Request) {
-	domains, err := h.domains.ListDomains()
+	domains, err := h.domains.ListDomains(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list domains")
 		return
 	}
 
-	allCerts, err := h.certs.ListCertificates()
+	allCerts, err := h.certs.ListLatestCertificates(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list certificates")
 		return
@@ -80,7 +80,7 @@ func (h *Handler) inventoryReport(w http.ResponseWriter, r *http.Request) {
 				if c.NotAfter.Before(now) {
 					entry.DaysRemaining = 0
 				} else {
-					entry.DaysRemaining = int(c.NotAfter.Sub(now).Hours()/24)
+					entry.DaysRemaining = int(c.NotAfter.Sub(now).Hours() / 24)
 				}
 			}
 		}

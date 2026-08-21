@@ -11,6 +11,8 @@
 
 ### 1. Move `notifiedSet` from `main.go` into `notifier` package
 
+
+**Status: ✅ Done** — dedup state now lives behind `DedupStore`, implemented persistently in `internal/repository/dedup.go`; `main.go` no longer owns any notification logic.
 **File:** `cmd/certwatch/main.go:193-230`
 
 The in-memory notification dedup struct is pure business logic that leaks into the entrypoint. It should live in `internal/notifier/` alongside the rest of the notification engine.
@@ -23,6 +25,8 @@ The in-memory notification dedup struct is pure business logic that leaks into t
 
 ### 2. Extract notification orchestration from `main.go`
 
+
+**Status: ✅ Done** — extracted into `internal/notifier/runner.go` (`Runner.Run`).
 **File:** `cmd/certwatch/main.go:232-387`
 
 `runNotifications` is ~75 lines of orchestration logic (profile validation, cron scheduling, immediate check, digest dispatch). Extract into a `notifier.Runner` or `services.NotificationService`.
@@ -35,6 +39,8 @@ The in-memory notification dedup struct is pure business logic that leaks into t
 
 ### 3. Replace scheduler polling (30s) with sleep-until-next-match
 
+
+**Status: ✅ Done** — `CronExpr.Next` computes the next match; each job sleeps until then.
 **File:** `internal/scheduler/scheduler.go:127`
 
 Each job wakes up every 30 seconds (~2,880 wakeups/day) just to check if the cron expression matches. Compute `time.Until(nextMatch)` and sleep instead.
@@ -85,6 +91,8 @@ HTTPS (5s) → CT (10s) sequentially = up to 15s per domain. With 10 concurrent 
 
 ### 7. Wrap bulk imports in a SQL transaction
 
+
+**Status: ✅ Done** — validation/dedup-check phase followed by atomic insert via `DomainRepository.CreateMany` (transactional, rollback on failure).
 **File:** `internal/services/domains.go:328-396`
 
 `BulkAddDomains` inserts domains one-by-one. A mid-import crash leaves the database in an inconsistent half-imported state.
@@ -97,6 +105,8 @@ HTTPS (5s) → CT (10s) sequentially = up to 15s per domain. With 10 concurrent 
 
 ### 8. Add context propagation through service & repository layers
 
+
+**Status: ✅ Done** — all repository/service methods take `ctx`; handlers pass `r.Context()`.
 **Files:** `internal/services/domains.go`, `internal/services/certificates.go`, `internal/repository/`
 
 Methods like `ListCertificates()`, `ListDomains()`, `GetDomain()` don't accept `context.Context`. This prevents cancellation, deadline propagation, and distributed tracing.
@@ -111,6 +121,8 @@ Methods like `ListCertificates()`, `ListDomains()`, `GetDomain()` don't accept `
 
 ### 9. Add database connection pool limits
 
+
+**Status: ✅ Done**
 **File:** `internal/database/database.go:19`
 
 `sql.Open` is called with no pool configuration. SQLite in WAL mode still benefits from limiting concurrent connections. Add:
@@ -129,6 +141,8 @@ db.SetConnMaxLifetime(time.Hour)
 
 ### 10. Add persistent notification dedup
 
+
+**Status: ✅ Done** — `notification_dedup` table (migration 4) + hourly TTL cleanup in the notifier Runner.
 Current in-memory dedup (`map[string]time.Time` in `main.go`) is lost on restart. A restart within the 24h dedup window means all currently-matching certs get re-alerted.
 
 **Why:** Prevents alert storms after deployments or crashes.
@@ -139,6 +153,8 @@ Current in-memory dedup (`map[string]time.Time` in `main.go`) is lost on restart
 
 ### 11. Replace dashboard/report in-memory aggregation with SQL
 
+
+**Status: ✅ Done** — `CountExpiryBuckets`/`ListExpiringSoon`/`ListLatestByDomain` aggregate in SQL; inventory loads one cert per domain instead of all rows.
 **Files:** `internal/api/dashboard.go:26-84`, `internal/api/reports.go:31-97`
 
 Both endpoints load ALL certificates into memory to compute counts. With 50k+ certs this becomes slow and memory-heavy.
@@ -151,6 +167,8 @@ Both endpoints load ALL certificates into memory to compute counts. With 50k+ ce
 
 ### 12. Add config validation at startup
 
+
+**Status: ✅ Done** — `Config.Validate()` (hard errors) and `Config.Warnings()` (non-fatal) run before startup.
 **File:** `internal/config/config.go`
 
 `config.Load()` reads the file and applies env overrides but never validates. Catch these early:
@@ -167,6 +185,8 @@ Both endpoints load ALL certificates into memory to compute counts. With 50k+ ce
 
 ### 13. Add global request timeout middleware
 
+
+**Status: ✅ Done** — `middleware.Timeout`, configurable via `server.request_timeout`.
 Each handler manages its own timeout or deadline inconsistently. Some use context, some don't.
 
 **Why:** Ensures every HTTP request has a hard deadline. Prevents resource leaks from hung connections.
@@ -204,6 +224,8 @@ Generic errors like `"failed to list domains"` give operators no diagnostic sign
 
 ### 16. Add database indexing strategy
 
+
+**Status: ✅ Done** — migration 5 adds six indexes.
 No explicit indexes beyond PRIMARY KEYs. Add:
 - `certificates(domain_id)` — already a FK but no index
 - `certificates(not_after)` — dashboard expiry queries
@@ -219,6 +241,8 @@ No explicit indexes beyond PRIMARY KEYs. Add:
 
 ### 17. Add database migration versioning
 
+
+**Status: ✅ Done** — `schema_version` table with ordered, transactionally-applied migrations.
 Current migrations are `CREATE TABLE IF NOT EXISTS` with no version tracking. Adding columns later requires manual ALTER TABLE tracking.
 
 **Why:** Allows safe schema evolution without manual intervention.
@@ -231,6 +255,8 @@ Current migrations are `CREATE TABLE IF NOT EXISTS` with no version tracking. Ad
 
 ### 18. Implement the documented `CERTWATCH_SMTP_FORCE_TLS` env var
 
+
+**Status: ✅ Done**
 `docs/guide/usage.md:106` documents the env var but `internal/config/config.go:131-190` never reads it.
 
 **Effort:** <1h
@@ -239,6 +265,8 @@ Current migrations are `CREATE TABLE IF NOT EXISTS` with no version tracking. Ad
 
 ### 19. Make rate limiter settings configurable
 
+
+**Status: ✅ Done** — `server.rate_limit`, `server.read_rate_limit`, `server.rate_limit_window` (+env overrides).
 `main.go:126` hardcodes 10 req/min. Add `server.rate_limit` and `server.rate_limit_window` to config.
 
 **Effort:** 1h
@@ -272,6 +300,8 @@ Currently the scheduler only stops via context cancellation. A `Stop()` method w
 
 ### 22. Add structured error types to repository layer
 
+
+**Status: ✅ Done** — `repository.ErrNotFound`/`ErrConflict` sentinels; services and API use `errors.Is` (404 vs 500 now correct).
 Repository methods return `fmt.Errorf(...)` — callers must string-match to distinguish "not found" from "DB error". Introduce `ErrNotFound`, `ErrConflict`, `ErrInternal`.
 
 **Effort:** 4h
@@ -280,6 +310,8 @@ Repository methods return `fmt.Errorf(...)` — callers must string-match to dis
 
 ### 23. Wrap scanner HTTP transport in a shared instance
 
+
+**Status: ✅ Done** — package-level `sharedTransport` reused by CT scanners.
 `discovery/ct.go:27-34` creates a new `http.Transport` per scanner. Use `http.DefaultTransport` or a shared configured transport.
 
 **Effort:** <1h
@@ -331,6 +363,8 @@ Add to `/health` response:
 
 ### 29. Move `rand` seed for tag color generation
 
+
+**Status: ✅ Done** — deterministic FNV-1a hash of the tag name; no `math/rand`.
 `services/domains.go:245-251` uses `math/rand` without explicit seeding in newer Go versions. Use `crypto/rand` or ensure `math/rand` is seeded.
 
 **Effort:** <1h
@@ -339,6 +373,8 @@ Add to `/health` response:
 
 ### 30. Add startup config log with secrets redacted
 
+
+**Status: ✅ Done** — `Config.LogValue` (slog.LogValuer) redacts secret/password automatically.
 No startup log shows which configuration was loaded. Log all config values at startup with passwords/secrets masked.
 
 **Effort:** 1h

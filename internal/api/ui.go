@@ -101,7 +101,7 @@ func (h *Handler) RegisterUIRoutes(mux *http.ServeMux) {
 			http.NotFound(w, r)
 			return
 		}
-		domain, err := h.domains.GetDomain(id)
+		domain, err := h.domains.GetDomain(r.Context(), id)
 		if err != nil {
 			http.NotFound(w, r)
 			return

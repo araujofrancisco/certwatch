@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/araujofrancisco/certwatch/internal/models"
@@ -41,6 +42,8 @@ type scanQueue struct {
 	active   map[int64]bool // domainIDs with a task in the queue or actively scanning
 	scan     scanFunc
 	timeout  time.Duration
+	completed atomic.Int64
+	failed    atomic.Int64
 }
 
 // newScanQueue constructs a scan queue with the given concurrency, buffer
@@ -119,6 +122,11 @@ func (q *scanQueue) worker() {
 		cert, err := q.scan(task.ctx, task.domainID, q.timeout)
 		<-q.sem // release semaphore
 		q.unmark(task.domainID)
+		if err != nil {
+			q.failed.Add(1)
+		} else {
+			q.completed.Add(1)
+		}
 		q.finish(task, cert, err)
 	}
 }
@@ -185,9 +193,10 @@ func (q *scanQueue) EnqueueScan(ctx context.Context, domainID int64, priority bo
 	}
 }
 
-// Stop shuts down the queue. Workers finish in-flight scans immediately
-// (honoring their context) but will not pick up new tasks. It blocks until
-// all workers exit. Stop is idempotent: calling it more than once is safe.
+// Stop shuts down the queue. Tasks that are still queued but not started are
+// dropped; in-flight scans run to completion (honoring their contexts). It
+// blocks until all workers exit and logs a completion summary. Stop is
+// idempotent: calling it more than once is safe.
 func (q *scanQueue) Stop() {
 	q.mu.Lock()
 	if q.closed {
@@ -197,9 +206,32 @@ func (q *scanQueue) Stop() {
 	q.closed = true
 	q.mu.Unlock()
 
+	dropped := 0
+drain:
+	for {
+		select {
+		case t := <-q.highPri:
+			q.unmark(t.domainID)
+			q.finish(t, nil, fmt.Errorf("scan queue stopped before start"))
+			dropped++
+		case t := <-q.lowPri:
+			q.unmark(t.domainID)
+			q.finish(t, nil, fmt.Errorf("scan queue stopped before start"))
+			dropped++
+		default:
+			break drain
+		}
+	}
+
 	close(q.highPri)
 	close(q.lowPri)
 	q.wg.Wait()
+
+	slog.Info("scan queue stopped",
+		"completed", q.completed.Load(),
+		"failed", q.failed.Load(),
+		"dropped", dropped,
+	)
 }
 
 // Pending returns the number of tasks waiting in the queues (not dispatched

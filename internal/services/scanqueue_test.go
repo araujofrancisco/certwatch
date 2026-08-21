@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -160,4 +161,38 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition not met within timeout")
+}
+func TestScanQueueStopDropsQueuedAndCompletesInFlight(t *testing.T) {
+	var runs int32
+	release := make(chan struct{})
+	releaseOnce := sync.Once{}
+	doRelease := func() { releaseOnce.Do(func() { close(release) }) }
+	q := newScanQueue(1, 10, 50*time.Millisecond, func(ctx context.Context, domainID int64, timeout time.Duration) (*models.Certificate, error) {
+		atomic.AddInt32(&runs, 1)
+		<-release // first task blocks until we tell it to finish
+		return &models.Certificate{DomainID: domainID}, nil
+	})
+	t.Cleanup(func() { doRelease(); q.Stop() })
+
+	q.EnqueueScan(context.Background(), 1, false) // will be in flight
+	waitFor(t, func() bool { return atomic.LoadInt32(&runs) == 1 })
+
+	// These two stay queued (worker blocked on the first scan).
+	q.EnqueueScan(context.Background(), 2, false)
+	q.EnqueueScan(context.Background(), 3, true)
+
+	done := make(chan struct{})
+	go func() { q.Stop(); close(done) }()
+
+	// Let the in-flight scan finish; Stop should then complete.
+	doRelease()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not return after in-flight scan finished")
+	}
+
+	if err := q.Enqueue(scanTask{domainID: 9, ctx: context.Background()}); err == nil {
+		t.Error("expected error enqueuing after stop")
+	}
 }

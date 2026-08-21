@@ -52,6 +52,18 @@ func Recovery(next http.Handler) http.Handler {
 	})
 }
 
+// Timeout enforces a hard deadline on every request. Handlers that honor
+// request context (all service/repository paths once context propagation is
+// in place) are cancelled when it fires; the client gets a 503.
+func Timeout(d time.Duration) func(http.Handler) http.Handler {
+	if d <= 0 {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return func(next http.Handler) http.Handler {
+		return http.TimeoutHandler(next, d, "{\"error\":\"request timeout\"}\n")
+	}
+}
+
 func Auth(authenticator *auth.Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

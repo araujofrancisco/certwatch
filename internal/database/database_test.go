@@ -289,3 +289,88 @@ func TestMigrate_KeepsCertificateWithEmptySerial(t *testing.T) {
 		t.Fatalf("expected 1 certificate (empty serial kept), got %d", count)
 	}
 }
+
+func TestMigrate_SchemaVersionTracked(t *testing.T) {
+	db := openMemory(t)
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	var version int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	want := migrations[len(migrations)-1].version
+	if version != want {
+		t.Fatalf("schema version = %d, want %d", version, want)
+	}
+}
+
+func TestMigrate_CreatesIndexes(t *testing.T) {
+	db := openMemory(t)
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	indexes := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		indexes[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"idx_certificates_domain_id",
+		"idx_certificates_not_after",
+		"idx_certificates_status",
+		"idx_domains_enabled",
+		"idx_domains_group_name",
+		"idx_domain_tags_tag_id",
+	} {
+		if !indexes[want] {
+			t.Errorf("index %s not created", want)
+		}
+	}
+}
+
+func TestMigrate_UpgradeFromPreVersionedDatabase(t *testing.T) {
+	db := openMemory(t)
+
+	// Simulate a database created by an older build: core tables exist but no
+	// schema_version tracking. Migrations must apply cleanly on top.
+	pre := []string{
+		createUsersTable,
+		createDomainsTable,
+		createCertificatesTable,
+		createTagsTable,
+		createDomainTagsTable,
+	}
+	for _, stmt := range pre {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("pre-versioning setup: %v", err)
+		}
+	}
+
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("migrate over pre-versioned schema: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('certificates') WHERE name = 'sans'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatal("sans column missing after upgrade")
+	}
+}

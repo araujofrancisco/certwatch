@@ -1,7 +1,10 @@
 package repository
 
 import (
+	"context"
+
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,31 +16,31 @@ type tagRepo struct {
 	db *database.DB
 }
 
-func (r *tagRepo) Create(name, color string) (*models.Tag, error) {
-	res, err := r.db.Exec(
+func (r *tagRepo) Create(ctx context.Context, name, color string) (*models.Tag, error) {
+	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO tags (name, color) VALUES (?, ?)`,
 		strings.ToLower(strings.TrimSpace(name)), color,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create tag: %w", err)
+		return nil, wrapConstraint("create tag", err)
 	}
 	id, _ := res.LastInsertId()
 	return &models.Tag{ID: id, Name: name, Color: color}, nil
 }
 
-func (r *tagRepo) FindByID(id int64) (*models.Tag, error) {
-	row := r.db.QueryRow(`SELECT id, name, color, created_at FROM tags WHERE id = ?`, id)
+func (r *tagRepo) FindByID(ctx context.Context, id int64) (*models.Tag, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT id, name, color, created_at FROM tags WHERE id = ?`, id)
 	return scanTag(row)
 }
 
-func (r *tagRepo) FindByName(name string) (*models.Tag, error) {
-	row := r.db.QueryRow(`SELECT id, name, color, created_at FROM tags WHERE name = ?`,
+func (r *tagRepo) FindByName(ctx context.Context, name string) (*models.Tag, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT id, name, color, created_at FROM tags WHERE name = ?`,
 		strings.ToLower(strings.TrimSpace(name)))
 	return scanTag(row)
 }
 
-func (r *tagRepo) List() ([]*models.Tag, error) {
-	rows, err := r.db.Query(`SELECT id, name, color, created_at FROM tags ORDER BY name`)
+func (r *tagRepo) List(ctx context.Context) ([]*models.Tag, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, name, color, created_at FROM tags ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}
@@ -45,19 +48,19 @@ func (r *tagRepo) List() ([]*models.Tag, error) {
 	return scanTags(rows)
 }
 
-func (r *tagRepo) Delete(id int64) error {
-	_, err := r.db.Exec(`DELETE FROM domain_tags WHERE tag_id = ?`, id)
+func (r *tagRepo) Delete(ctx context.Context, id int64) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM domain_tags WHERE tag_id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete domain_tags for tag: %w", err)
 	}
-	_, err = r.db.Exec(`DELETE FROM tags WHERE id = ?`, id)
+	_, err = r.db.ExecContext(ctx, `DELETE FROM tags WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete tag: %w", err)
 	}
 	return nil
 }
 
-func (r *tagRepo) SetDomainTags(domainID int64, tagIDs []int64) error {
+func (r *tagRepo) SetDomainTags(ctx context.Context, domainID int64, tagIDs []int64) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -68,12 +71,12 @@ func (r *tagRepo) SetDomainTags(domainID int64, tagIDs []int64) error {
 		}
 	}()
 
-	if _, err := tx.Exec(`DELETE FROM domain_tags WHERE domain_id = ?`, domainID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM domain_tags WHERE domain_id = ?`, domainID); err != nil {
 		return fmt.Errorf("delete domain_tags: %w", err)
 	}
 
 	for _, tid := range tagIDs {
-		if _, err := tx.Exec(`INSERT INTO domain_tags (domain_id, tag_id) VALUES (?, ?)`, domainID, tid); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO domain_tags (domain_id, tag_id) VALUES (?, ?)`, domainID, tid); err != nil {
 			return fmt.Errorf("insert domain_tag: %w", err)
 		}
 	}
@@ -81,8 +84,8 @@ func (r *tagRepo) SetDomainTags(domainID int64, tagIDs []int64) error {
 	return tx.Commit()
 }
 
-func (r *tagRepo) GetDomainTags(domainID int64) ([]*models.Tag, error) {
-	rows, err := r.db.Query(`
+func (r *tagRepo) GetDomainTags(ctx context.Context, domainID int64) ([]*models.Tag, error) {
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT t.id, t.name, t.color, t.created_at
 		FROM tags t
 		JOIN domain_tags dt ON dt.tag_id = t.id
@@ -95,7 +98,7 @@ func (r *tagRepo) GetDomainTags(domainID int64) ([]*models.Tag, error) {
 	return scanTags(rows)
 }
 
-func (r *tagRepo) GetTagsByDomainIDs(domainIDs []int64) (map[int64][]*models.Tag, error) {
+func (r *tagRepo) GetTagsByDomainIDs(ctx context.Context, domainIDs []int64) (map[int64][]*models.Tag, error) {
 	if len(domainIDs) == 0 {
 		return make(map[int64][]*models.Tag), nil
 	}
@@ -105,7 +108,7 @@ func (r *tagRepo) GetTagsByDomainIDs(domainIDs []int64) (map[int64][]*models.Tag
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT dt.domain_id, t.id, t.name, t.color, t.created_at
 		FROM domain_tags dt
 		JOIN tags t ON t.id = dt.tag_id
@@ -137,8 +140,8 @@ func scanTag(s scanner) (*models.Tag, error) {
 	var createdAt sql.NullTime
 	err := s.Scan(&t.ID, &t.Name, &t.Color, &createdAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("tag not found")
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("tag: %w", ErrNotFound)
 		}
 		return nil, fmt.Errorf("scan tag: %w", err)
 	}

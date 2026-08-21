@@ -29,6 +29,10 @@ type AuthService struct {
 }
 
 func NewDomainService(domains repository.DomainRepository, certs repository.CertificateRepository, scanners *discovery.Registry, tags repository.TagRepository, backgroundCtx context.Context, maxConcurrent, queueSize int, scanTimeout time.Duration) *DomainService {
+	// backgroundCtx should be a long-lived context (e.g. context.Background()
+	// or the process lifetime context), NOT a per-request or signal context:
+	// scans queued with it must survive request completion and run to
+	// completion during StopScanQueue at shutdown.
 	s := &DomainService{domains: domains, certs: certs, scanners: scanners, tags: tags, backgroundCtx: backgroundCtx}
 	s.scanQueue = newScanQueue(maxConcurrent, queueSize, scanTimeout, s.ScanDomain)
 	return s

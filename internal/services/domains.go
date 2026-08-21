@@ -2,18 +2,20 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
-	"math/rand"
 	"strings"
 	"time"
 
 	"github.com/araujofrancisco/certwatch/internal/ctsearch"
 	"github.com/araujofrancisco/certwatch/internal/discovery"
 	"github.com/araujofrancisco/certwatch/internal/models"
+	"github.com/araujofrancisco/certwatch/internal/repository"
 )
 
-func (s *DomainService) AddDomain(domain, description, group string) (*models.Domain, error) {
+func (s *DomainService) AddDomain(ctx context.Context, domain, description, group string) (*models.Domain, error) {
 	domain = strings.TrimSpace(strings.ToLower(domain))
 	if domain == "" {
 		return nil, fmt.Errorf("domain is required")
@@ -35,8 +37,8 @@ func (s *DomainService) AddDomain(domain, description, group string) (*models.Do
 		Group:       group,
 		Enabled:     true,
 	}
-	if err := s.domains.Create(d); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+	if err := s.domains.Create(ctx, d); err != nil {
+		if errors.Is(err, repository.ErrConflict) {
 			return nil, fmt.Errorf("domain already exists")
 		}
 		return nil, err
@@ -44,19 +46,19 @@ func (s *DomainService) AddDomain(domain, description, group string) (*models.Do
 	return d, nil
 }
 
-func (s *DomainService) GetDomain(id int64) (*models.Domain, error) {
-	d, err := s.domains.FindByID(id)
+func (s *DomainService) GetDomain(ctx context.Context, id int64) (*models.Domain, error) {
+	d, err := s.domains.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	ptags, err := s.tags.GetDomainTags(d.ID)
+	ptags, err := s.tags.GetDomainTags(ctx, d.ID)
 	if err == nil {
 		d.Tags = derefTags(ptags)
 	}
 	return d, nil
 }
 
-func (s *DomainService) attachTags(domains []*models.Domain) {
+func (s *DomainService) attachTags(ctx context.Context, domains []*models.Domain) {
 	if len(domains) == 0 {
 		return
 	}
@@ -64,7 +66,7 @@ func (s *DomainService) attachTags(domains []*models.Domain) {
 	for i, d := range domains {
 		ids[i] = d.ID
 	}
-	tagMap, err := s.tags.GetTagsByDomainIDs(ids)
+	tagMap, err := s.tags.GetTagsByDomainIDs(ctx, ids)
 	if err != nil {
 		return
 	}
@@ -82,13 +84,13 @@ type PaginatedDomains struct {
 	Limit   int              `json:"limit"`
 }
 
-func (s *DomainService) ListDomainsPaginated(filter models.DomainFilter) (*PaginatedDomains, error) {
-	domains, err := s.domains.ListFiltered(filter)
+func (s *DomainService) ListDomainsPaginated(ctx context.Context, filter models.DomainFilter) (*PaginatedDomains, error) {
+	domains, err := s.domains.ListFiltered(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
-	s.attachTags(domains)
-	total, err := s.domains.CountFiltered(filter)
+	s.attachTags(ctx, domains)
+	total, err := s.domains.CountFiltered(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -99,13 +101,18 @@ func (s *DomainService) ListDomainsPaginated(filter models.DomainFilter) (*Pagin
 	return &PaginatedDomains{Domains: domains, Total: total, Page: page, Limit: filter.Limit}, nil
 }
 
-func (s *DomainService) ListDomains() ([]*models.Domain, error) {
-	domains, err := s.domains.List()
+func (s *DomainService) ListDomains(ctx context.Context) ([]*models.Domain, error) {
+	domains, err := s.domains.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	s.attachTags(domains)
+	s.attachTags(ctx, domains)
 	return domains, nil
+}
+
+// CountDomains returns the total number of domains.
+func (s *DomainService) CountDomains(ctx context.Context) (int, error) {
+	return s.domains.CountFiltered(ctx, models.DomainFilter{})
 }
 
 func derefTags(ptags []*models.Tag) []models.Tag {
@@ -116,12 +123,12 @@ func derefTags(ptags []*models.Tag) []models.Tag {
 	return tags
 }
 
-func (s *DomainService) DeleteDomain(id int64) error {
-	return s.domains.Delete(id)
+func (s *DomainService) DeleteDomain(ctx context.Context, id int64) error {
+	return s.domains.Delete(ctx, id)
 }
 
 func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout time.Duration) (*models.Certificate, error) {
-	d, err := s.domains.FindByID(domainID)
+	d, err := s.domains.FindByID(ctx, domainID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +178,7 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 			if !r.NotAfter.IsZero() && r.NotAfter.Before(time.Now()) {
 				continue
 			}
-			saved = append(saved, s.saveCertificate(d.ID, r))
+			saved = append(saved, s.saveCertificate(ctx, d.ID, r))
 		}
 	}
 
@@ -189,7 +196,7 @@ func (s *DomainService) ScanDomain(ctx context.Context, domainID int64, timeout 
 			Status:      "error",
 			LastChecked: time.Now(),
 		}
-		if err := s.certs.Create(cert); err != nil {
+		if err := s.certs.Create(ctx, cert); err != nil {
 			slog.Error("failed to save error cert", "domain_id", d.ID, "error", err)
 		}
 		return cert, fmt.Errorf("all scanners failed: %w", lastErr)
@@ -212,7 +219,7 @@ func scanAll(scanner discovery.Scanner, ctx context.Context, domain string) ([]*
 	return []*discovery.Result{r}, nil
 }
 
-func (s *DomainService) UpdateDomain(id int64, domain, description, group string, enabled bool, tags []string) (*models.Domain, error) {
+func (s *DomainService) UpdateDomain(ctx context.Context, id int64, domain, description, group string, enabled bool, tags []string) (*models.Domain, error) {
 	domain = strings.TrimSpace(strings.ToLower(domain))
 	if domain == "" {
 		return nil, fmt.Errorf("domain is required")
@@ -229,7 +236,7 @@ func (s *DomainService) UpdateDomain(id int64, domain, description, group string
 		return nil, fmt.Errorf("group too long (max 100)")
 	}
 
-	d, err := s.domains.FindByID(id)
+	d, err := s.domains.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -239,24 +246,24 @@ func (s *DomainService) UpdateDomain(id int64, domain, description, group string
 	d.Group = group
 	d.Enabled = enabled
 
-	if err := s.domains.Update(d); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+	if err := s.domains.Update(ctx, d); err != nil {
+		if errors.Is(err, repository.ErrConflict) {
 			return nil, fmt.Errorf("domain already exists")
 		}
 		return nil, err
 	}
 
 	if tags != nil {
-		if err := s.SetDomainTags(d.ID, tags); err != nil {
+		if err := s.SetDomainTags(ctx, d.ID, tags); err != nil {
 			return nil, err
 		}
 	}
 
-	return s.GetDomain(d.ID)
+	return s.GetDomain(ctx, d.ID)
 }
 
-func (s *DomainService) SetDomainTags(domainID int64, tagNames []string) error {
-	tags, err := s.ensureTags(tagNames)
+func (s *DomainService) SetDomainTags(ctx context.Context, domainID int64, tagNames []string) error {
+	tags, err := s.ensureTags(ctx, tagNames)
 	if err != nil {
 		return err
 	}
@@ -264,15 +271,15 @@ func (s *DomainService) SetDomainTags(domainID int64, tagNames []string) error {
 	for _, t := range tags {
 		ids = append(ids, t.ID)
 	}
-	return s.tags.SetDomainTags(domainID, ids)
+	return s.tags.SetDomainTags(ctx, domainID, ids)
 }
 
-func (s *DomainService) ensureTags(names []string) ([]*models.Tag, error) {
+func (s *DomainService) ensureTags(ctx context.Context, names []string) ([]*models.Tag, error) {
 	var result []*models.Tag
 	for _, n := range names {
-		tag, err := s.tags.FindByName(n)
+		tag, err := s.tags.FindByName(ctx, n)
 		if err != nil {
-			tag, err = s.tags.Create(n, randomTagColor())
+			tag, err = s.tags.Create(ctx, n, tagColor(n))
 			if err != nil {
 				return nil, err
 			}
@@ -282,15 +289,19 @@ func (s *DomainService) ensureTags(names []string) ([]*models.Tag, error) {
 	return result, nil
 }
 
-func randomTagColor() string {
+// tagColor deterministically maps a tag name to a palette color so the same
+// tag always renders with the same color across restarts and replicas.
+func tagColor(name string) string {
 	palette := []string{
 		"#0d6efd", "#6610f2", "#6f42c1", "#d63384", "#dc3545",
 		"#fd7e14", "#ffc107", "#198754", "#20c997", "#0dcaf0",
 	}
-	return palette[rand.Intn(len(palette))]
+	h := fnv.New32a()
+	h.Write([]byte(strings.ToLower(strings.TrimSpace(name))))
+	return palette[h.Sum32()%uint32(len(palette))]
 }
 
-func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result) *models.Certificate {
+func (s *DomainService) saveCertificate(ctx context.Context, domainID int64, result *discovery.Result) *models.Certificate {
 	cert := &models.Certificate{
 		DomainID:    domainID,
 		Issuer:      result.Issuer,
@@ -308,11 +319,11 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 	// Dedup against every stored certificate for the domain (not just the
 	// latest) by fingerprint or serial+issuer, so a scan that returns
 	// multiple certs does not create duplicates on subsequent scans.
-	if existing := s.findExistingCert(domainID, result); existing != nil {
-		return s.updateCert(existing, result, cert)
+	if existing := s.findExistingCert(ctx, domainID, result); existing != nil {
+		return s.updateCert(ctx, existing, result, cert)
 	}
 
-	if err := s.certs.Create(cert); err != nil {
+	if err := s.certs.Create(ctx, cert); err != nil {
 		slog.Error("failed to save certificate", "domain_id", domainID, "error", err)
 	}
 
@@ -325,7 +336,7 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 	// inserted in bulk (it could delete valid rows that an interleaving scan
 	// has not yet normalized).
 	if cert.Status == "valid" {
-		if n, err := s.certs.DeleteExpiredByDomain(domainID); err != nil {
+		if n, err := s.certs.DeleteExpiredByDomain(ctx, domainID); err != nil {
 			slog.Error("failed to purge expired certificates on renewal", "domain_id", domainID, "error", err)
 		} else if n > 0 {
 			slog.Info("purged expired certificates on renewal", "domain_id", domainID, "deleted", n)
@@ -335,8 +346,8 @@ func (s *DomainService) saveCertificate(domainID int64, result *discovery.Result
 	return cert
 }
 
-func (s *DomainService) findExistingCert(domainID int64, result *discovery.Result) *models.Certificate {
-	existing, err := s.certs.ListByDomainID(domainID)
+func (s *DomainService) findExistingCert(ctx context.Context, domainID int64, result *discovery.Result) *models.Certificate {
+	existing, err := s.certs.ListByDomainID(ctx, domainID)
 	if err != nil {
 		return nil
 	}
@@ -400,7 +411,7 @@ func sameDay(a, b time.Time) bool {
 	return ay == by && am == bm && ad == bd
 }
 
-func (s *DomainService) updateCert(existing *models.Certificate, result *discovery.Result, fresh *models.Certificate) *models.Certificate {
+func (s *DomainService) updateCert(ctx context.Context, existing *models.Certificate, result *discovery.Result, fresh *models.Certificate) *models.Certificate {
 	existing.Status = result.Status
 	existing.LastChecked = time.Now()
 	existing.NotAfter = result.NotAfter
@@ -412,7 +423,7 @@ func (s *DomainService) updateCert(existing *models.Certificate, result *discove
 		existing.Fingerprint = result.Fingerprint
 	}
 	existing.Protocol = result.Protocol
-	if err := s.certs.Update(existing); err != nil {
+	if err := s.certs.Update(ctx, existing); err != nil {
 		slog.Error("failed to update certificate", "cert_id", existing.ID, "error", err)
 	}
 	return existing
@@ -446,9 +457,18 @@ type BulkAddResponse struct {
 	Summary BulkAddSummary   `json:"summary"`
 }
 
-func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse {
+func (s *DomainService) BulkAddDomains(ctx context.Context, pairs []BulkDomainEntry) *BulkAddResponse {
 	var results []*BulkAddResult
 	var summary BulkAddSummary
+
+	// Phase 1: validate and dedup-check every entry up front so only valid,
+	// non-existing domains reach the insert phase. No writes happen here.
+	type pending struct {
+		entry  BulkDomainEntry
+		domain *models.Domain
+		res    *BulkAddResult
+	}
+	var pendingInserts []pending
 
 	for _, p := range pairs {
 		res := &BulkAddResult{Domain: p.Domain, Description: p.Description, Group: p.Group, Tags: p.Tags}
@@ -469,7 +489,7 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 			continue
 		}
 
-		existing, err := s.domains.FindByDomain(domain)
+		existing, err := s.domains.FindByDomain(ctx, domain)
 		if err == nil && existing != nil {
 			res.Status = "skipped"
 			res.Error = "already exists"
@@ -478,32 +498,51 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 			continue
 		}
 
-		d := &models.Domain{
-			Domain:      domain,
-			Description: p.Description,
-			Group:       p.Group,
-			Enabled:     true,
-		}
-		if err := s.domains.Create(d); err != nil {
-			res.Status = "error"
-			res.Error = err.Error()
-			summary.Errors++
-			results = append(results, res)
-			continue
-		}
+		pendingInserts = append(pendingInserts, pending{
+			entry: p,
+			domain: &models.Domain{
+				Domain:      domain,
+				Description: p.Description,
+				Group:       p.Group,
+				Enabled:     true,
+			},
+			res: res,
+		})
+	}
 
-		if len(p.Tags) > 0 {
-			if err := s.SetDomainTags(d.ID, p.Tags); err != nil {
-				slog.Error("failed to set tags on bulk import", "domain_id", d.ID, "error", err)
+	// Phase 2: insert all accepted domains atomically — a failure part-way
+	// through rolls the whole batch back instead of leaving a half-imported
+	// state behind.
+	if len(pendingInserts) > 0 {
+		domains := make([]*models.Domain, len(pendingInserts))
+		for i, pi := range pendingInserts {
+			domains[i] = pi.domain
+		}
+		if err := s.domains.CreateMany(ctx, domains); err != nil {
+			slog.Error("bulk import failed, rolled back", "error", err)
+			for _, pi := range pendingInserts {
+				pi.res.Status = "error"
+				pi.res.Error = err.Error()
+				summary.Errors++
+				results = append(results, pi.res)
 			}
+			summary.Total = summary.Created + summary.Skipped + summary.Errors
+			return &BulkAddResponse{Results: results, Summary: summary}
 		}
 
-		res.Status = "created"
-
-		s.EnqueueScan(s.backgroundCtx, d.ID, false)
-
-		summary.Created++
-		results = append(results, res)
+		// Phase 3: post-insert work (tags, scan enqueue). Tag failures are
+		// logged but do not fail the import, matching previous behavior.
+		for _, pi := range pendingInserts {
+			if len(pi.entry.Tags) > 0 {
+				if err := s.SetDomainTags(ctx, pi.domain.ID, pi.entry.Tags); err != nil {
+					slog.Error("failed to set tags on bulk import", "domain_id", pi.domain.ID, "error", err)
+				}
+			}
+			pi.res.Status = "created"
+			s.EnqueueScan(s.backgroundCtx, pi.domain.ID, false)
+			summary.Created++
+			results = append(results, pi.res)
+		}
 	}
 
 	summary.Total = summary.Created + summary.Skipped + summary.Errors
@@ -511,7 +550,7 @@ func (s *DomainService) BulkAddDomains(pairs []BulkDomainEntry) *BulkAddResponse
 }
 
 func (s *DomainService) ScanAllDomains(ctx context.Context) error {
-	domains, err := s.domains.ListEnabled()
+	domains, err := s.domains.ListEnabled(ctx)
 	if err != nil {
 		return err
 	}

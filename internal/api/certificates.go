@@ -45,7 +45,7 @@ func (h *Handler) listCertificates(w http.ResponseWriter, r *http.Request) {
 		f.Limit = limit
 	}
 
-	certs, err := h.certs.ListCertificatesPaginated(f)
+	certs, err := h.certs.ListCertificatesPaginated(r.Context(), f)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list certificates")
 		return
@@ -88,7 +88,7 @@ func (h *Handler) listDomainCertificates(w http.ResponseWriter, r *http.Request)
 		f.Expired = true
 	}
 
-	certs, err := h.certs.ListCertificatesFiltered(f)
+	certs, err := h.certs.ListCertificatesFiltered(r.Context(), f)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list certificates")
 		return
@@ -98,7 +98,7 @@ func (h *Handler) listDomainCertificates(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) purgeCertificateErrors(w http.ResponseWriter, r *http.Request) {
-	n, err := h.certs.PurgeErrors()
+	n, err := h.certs.PurgeErrors(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to purge certificate errors")
 		return
@@ -113,7 +113,7 @@ func (h *Handler) purgeDomainCertificateErrors(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	n, err := h.certs.PurgeErrorsByDomain(id)
+	n, err := h.certs.PurgeErrorsByDomain(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to purge certificate errors")
 		return
@@ -122,7 +122,7 @@ func (h *Handler) purgeDomainCertificateErrors(w http.ResponseWriter, r *http.Re
 }
 
 func (h *Handler) purgeExpiredCertificates(w http.ResponseWriter, r *http.Request) {
-	n, err := h.certs.PurgeExpired()
+	n, err := h.certs.PurgeExpired(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to purge expired certificates")
 		return
@@ -137,7 +137,7 @@ func (h *Handler) purgeDomainExpiredCertificates(w http.ResponseWriter, r *http.
 		return
 	}
 
-	n, err := h.certs.PurgeExpiredByDomain(id)
+	n, err := h.certs.PurgeExpiredByDomain(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to purge expired certificates")
 		return
