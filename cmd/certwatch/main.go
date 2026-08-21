@@ -11,6 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	// Embed the IANA timezone database: the scratch container image ships no
+	// /usr/share/zoneinfo, so time.LoadLocation would fail for every
+	// notification profile timezone without this.
+	_ "time/tzdata"
+
 	"github.com/araujofrancisco/certwatch/internal/api"
 	"github.com/araujofrancisco/certwatch/internal/auth"
 	"github.com/araujofrancisco/certwatch/internal/config"
