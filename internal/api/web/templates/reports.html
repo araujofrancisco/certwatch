@@ -142,7 +142,7 @@ async function loadReports() {
       <td>${c ? escapeHtml(c.subject) : '-'}</td>
       <td>${c ? escapeHtml(c.issuer) : '-'}</td>
       <td>${c ? escapeHtml(c.protocol) : '-'}</td>
-      <td>${c ? new Date(c.not_after).toLocaleDateString() : '-'}</td>
+      <td data-sort="${c ? c.not_after : ''}">${c ? new Date(c.not_after).toLocaleDateString() : '-'}</td>
       <td class="${c ? statusClass(c.status) : ''}">${c ? days : '-'}</td>
       <td>${c ? '<span class="' + statusClass(c.status) + '">' + escapeHtml(c.status) + '</span>' : '<span class="text-muted">no cert</span>'}</td>
     </tr>`;

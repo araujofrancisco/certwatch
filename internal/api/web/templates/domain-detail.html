@@ -82,8 +82,8 @@ async function loadCertificates() {
       <td>${escapeHtml(c.issuer)}</td>
       <td class="text-muted text-break" style="font-size:0.85rem">${escapeHtml(c.serial || '-')}</td>
       <td class="text-muted">${escapeHtml(sans || '-')}</td>
-      <td>${new Date(c.not_before).toLocaleDateString()}</td>
-      <td>${new Date(c.not_after).toLocaleDateString()}</td>
+      <td data-sort="${c.not_before}">${new Date(c.not_before).toLocaleDateString()}</td>
+      <td data-sort="${c.not_after}">${new Date(c.not_after).toLocaleDateString()}</td>
       <td class="${statusClass(c.status)}">${days}</td>
       <td><span class="${statusClass(c.status)}">${c.status}</span></td>
     </tr>`;

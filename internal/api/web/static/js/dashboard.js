@@ -154,11 +154,17 @@ function makeSortable(tableId) {
       var rows = Array.from(tbody.querySelectorAll('tr'));
       if (rows.length === 0 || rows[0].classList.contains('skeleton-row')) return;
       var multiplier = direction === 'asc' ? 1 : -1;
+      function cellValue(row) {
+        var cell = row.children[col];
+        if (!cell) return '';
+        return cell.getAttribute('data-sort') || cell.textContent.trim();
+      }
+      function isNumeric(s) { return s !== '' && s.length <= 15 && !isNaN(Number(s)); }
       rows.sort(function(a, b) {
-        var aText = (a.children[col] ? a.children[col].textContent.trim() : '');
-        var bText = (b.children[col] ? b.children[col].textContent.trim() : '');
-        var aNum = parseFloat(aText), bNum = parseFloat(bText);
-        if (!isNaN(aNum) && !isNaN(bNum)) return (aNum - bNum) * multiplier;
+        var aText = cellValue(a), bText = cellValue(b);
+        if (isNumeric(aText) && isNumeric(bText)) return (Number(aText) - Number(bText)) * multiplier;
+        var aDate = Date.parse(aText), bDate = Date.parse(bText);
+        if (!isNaN(aDate) && !isNaN(bDate)) return (aDate - bDate) * multiplier;
         if (aText === '-' || aText === '') return 1 * multiplier;
         if (bText === '-' || bText === '') return -1 * multiplier;
         return aText.localeCompare(bText) * multiplier;

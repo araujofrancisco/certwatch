@@ -121,7 +121,7 @@ async function loadCertsPage(page) {
       <td><a href="/domains/${c.domain_id}">${escapeHtml(domainMap[c.domain_id] || '?')}</a></td>
       <td>${escapeHtml(c.subject)}</td>
       <td>${escapeHtml(c.issuer)}</td>
-      <td>${new Date(c.not_after).toLocaleDateString()}</td>
+      <td data-sort="${c.not_after}">${new Date(c.not_after).toLocaleDateString()}</td>
       <td class="${statusClass(c.status)}">${days}</td>
       <td><span class="${statusClass(c.status)}">${c.status}</span></td>
     </tr>`;
