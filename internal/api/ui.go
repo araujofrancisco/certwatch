@@ -9,9 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/araujofrancisco/certwatch/internal/middleware"
-	"github.com/araujofrancisco/certwatch/internal/models"
 )
 
 //go:embed web/templates/*.html
@@ -23,7 +20,6 @@ var staticFS embed.FS
 type pageData struct {
 	Title  string
 	Active string
-	Domain *models.Domain
 }
 
 type pageTmpl struct {
@@ -94,29 +90,19 @@ func (h *Handler) RegisterUIRoutes(mux *http.ServeMux) {
 		renderPage(w, "domains", pageData{Title: "Domains", Active: "domains"})
 	})
 
-	// The domain detail page performs a server-side privileged lookup, so it
-	// must not be reachable without a valid token (unlike the other shell
-	// pages, which are static and fetch data client-side via the JSON API).
-	authMiddleware := middleware.Auth(h.authN)
-	mux.Handle("GET /domains/", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/domains/"), "/")
-		idStr := parts[0]
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		domain, err := h.domains.GetDomain(r.Context(), id)
-		if err != nil {
+	// Static shell page like the other UI routes; the domain data is fetched
+	// client-side via the JSON API, which handles auth and login redirects.
+	mux.HandleFunc("GET /domains/", func(w http.ResponseWriter, r *http.Request) {
+		idStr := strings.Split(strings.TrimPrefix(r.URL.Path, "/domains/"), "/")[0]
+		if _, err := strconv.ParseInt(idStr, 10, 64); err != nil {
 			http.NotFound(w, r)
 			return
 		}
 		renderPage(w, "domain-detail", pageData{
-			Title:  domain.Domain,
+			Title:  "Domain Detail",
 			Active: "domains",
-			Domain: domain,
 		})
-	})))
+	})
 
 	mux.HandleFunc("GET /certificates", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "certificates", pageData{Title: "Certificates", Active: "certificates"})
